@@ -4,3 +4,4 @@ __pycache__/
 build/
 dist/
 *.spec
+x265_2pass.log*
