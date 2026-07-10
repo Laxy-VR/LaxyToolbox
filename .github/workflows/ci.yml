@@ -33,7 +33,9 @@ jobs:
       - name: Fetch ffmpeg (bundled into the exe)
         shell: pwsh
         run: |
-          curl.exe -sL -o ffmpeg.zip https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+          # The FULL build, not essentials: essentials lacks libsvtav1, which
+          # the app needs for CPU AV1 encoding. Pinned for reproducible builds.
+          curl.exe -sL -o ffmpeg.zip https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-full_build.zip
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
           $bin = (Get-ChildItem ffmpeg_tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
           Add-Content $env:GITHUB_PATH $bin
