@@ -8,10 +8,9 @@ from probe import VideoInfo
 
 APP_NAME = "Laxy's Compressor"
 APP_VERSION = "1.0"
-# Set to "yourgithubuser/repo" once the project is pushed to GitHub; the app
-# then checks the repo's latest release at startup and offers updates.
-# Empty string disables the check entirely.
-GITHUB_REPO = ""
+# The app checks this repo's latest GitHub release at startup and offers
+# updates. Empty string disables the check entirely.
+GITHUB_REPO = "Laxy-VR/LaxyToolbox"
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".laxy_compressor.json")
 
 TAB_COMPRESS = "Compress"

@@ -6,7 +6,7 @@ recommendations, batch queueing, and live progress, all powered by `ffmpeg`.
 
 ## Requirements
 - Python 3.10+
-- `ffmpeg` and `ffprobe` on your PATH (already installed at `C:\Users\LeonA\ffmpeg\bin`)
+- `ffmpeg` and `ffprobe` on your PATH (the packaged .exe bundles its own)
 
 ## Setup (once)
 ```powershell
