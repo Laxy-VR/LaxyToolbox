@@ -42,6 +42,19 @@ def test_status_display_basic():
     assert status_display(_job("encoding", progress=0.42))[0] == "encoding 42%"
 
 
+def test_builtin_presets_reference_valid_labels():
+    """A typo in a built-in preset's label would silently no-op; catch it."""
+    from models import (BUILTIN_PRESETS, CODEC_OPTIONS, TAB_COMPRESS,
+                        MODE_QUALITY, MODE_TARGET, MODE_SPLIT)
+    codec_labels = {c[0] for c in CODEC_OPTIONS}
+    modes = {MODE_QUALITY, MODE_TARGET, MODE_SPLIT}
+    for name, p in BUILTIN_PRESETS.items():
+        assert p.get("tab") == TAB_COMPRESS, name
+        assert p.get("mode") in modes, name
+        if "codec" in p:
+            assert p["codec"] in codec_labels, name
+
+
 @pytest.mark.parametrize("latest,current,newer", [
     ("v1.1", "1.0", True),
     ("1.0.1", "1.0", True),

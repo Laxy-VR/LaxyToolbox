@@ -38,7 +38,7 @@ from models import (APP_NAME, APP_VERSION, CONFIG_PATH, TAB_COMPRESS, TAB_GIF,
                     TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD, MODE_QUALITY,
                     MODE_TARGET, MODE_SPLIT, MODE_GIF, MODE_IMAGE, MODE_AUDIO,
                     MODE_DOWNLOAD, DL_RES_OPTIONS, DL_COOKIES_OPTIONS,
-                    CODEC_OPTIONS, HW_OPTIONS,
+                    BUILTIN_PRESETS, PRESET_PLACEHOLDER, CODEC_OPTIONS, HW_OPTIONS,
                     GIF_DITHER_OPTIONS, IMG_FORMAT_OPTIONS, IMG_QUALITY_OPTIONS,
                     IMG_RESIZE_OPTIONS, AUD_FORMAT_OPTIONS, AUD_QUALITY_OPTIONS,
                     PARTS_OPTIONS, PRESETS, RESOLUTIONS, FPS_OPTIONS,
@@ -80,6 +80,7 @@ class App(*_AppBase):
         self.cancel_event = threading.Event()
         self.msg_queue: queue.Queue = queue.Queue()
         self._dl_cancels: dict = {}  # per-download cancel events, keyed by job id
+        self._user_presets: dict = {}  # name -> settings snapshot, from config
 
         self._build_ui()
         # Size to fit every control (measured on the taller Compress tab).
@@ -220,10 +221,19 @@ class App(*_AppBase):
         card.grid_columnconfigure(1, weight=1)
         card.grid_columnconfigure(3, weight=1)
 
-        self.settings_title = ctk.CTkLabel(card, text="Settings · applied to every file",
+        header_bar = ctk.CTkFrame(card, fg_color="transparent")
+        header_bar.grid(row=0, column=0, columnspan=4, sticky="ew", padx=14, pady=(12, 8))
+        self.settings_title = ctk.CTkLabel(header_bar, text="Settings · applied to every file",
                                            font=self.f("sans", 13, "bold"))
-        self.settings_title.grid(row=0, column=0, columnspan=4, sticky="w",
-                                 padx=14, pady=(12, 8))
+        self.settings_title.pack(side="left")
+        ctk.CTkButton(header_bar, text="Save preset", width=90, command=self._open_preset_dialog,
+                      fg_color=theme.SURFACE2, hover_color=theme.BORDER,
+                      text_color=theme.TEXT).pack(side="right")
+        self.presets_menu = ctk.CTkOptionMenu(header_bar, width=170,
+                                              values=self._preset_names(),
+                                              command=self._on_preset_selected)
+        self.presets_menu.set(PRESET_PLACEHOLDER)
+        self.presets_menu.pack(side="right", padx=(0, 8))
 
         self.mode_seg = ctk.CTkSegmentedButton(
             card, values=[MODE_QUALITY, MODE_TARGET, MODE_SPLIT],
@@ -1679,6 +1689,10 @@ class App(*_AppBase):
                 self.geometry(cfg["geometry"])
             except tk.TclError:
                 pass
+        if isinstance(cfg.get("presets"), dict):
+            self._user_presets = {str(k): v for k, v in cfg["presets"].items()
+                                  if isinstance(v, dict)}
+            self._refresh_preset_menu()
         self._on_codec_change()
         self._refresh_mode()
 
@@ -1707,11 +1721,159 @@ class App(*_AppBase):
             cfg["nvenc_ok"] = self._gpu_ok
         if self.hw_menu is not None:
             cfg["hardware"] = self.hw_menu.get()
+        if self._user_presets:
+            cfg["presets"] = self._user_presets
         try:
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, indent=2)
         except OSError:
             pass
+
+    # ---------- setting presets ----------
+    def _preset_names(self):
+        return ([PRESET_PLACEHOLDER] + list(BUILTIN_PRESETS)
+                + list(self._user_presets))
+
+    def _refresh_preset_menu(self):
+        self.presets_menu.configure(values=self._preset_names())
+        self.presets_menu.set(PRESET_PLACEHOLDER)
+
+    def _collect_preset(self) -> dict:
+        """A full snapshot of the current settings for a user preset."""
+        d = {
+            "tab": self.tab_seg.get(), "mode": self.mode_seg.get(),
+            "codec": self.codec_menu.get(), "crf": int(self.crf_slider.get()),
+            "preset": self.preset_menu.get(), "resolution": self.res_menu.get(),
+            "fps": self.fps_menu.get(), "parts": self.parts_menu.get(),
+            "audio": self.audio_menu.get(), "dither": self.dither_menu.get(),
+            "img_format": self.img_format_menu.get(),
+            "img_quality": self.img_quality_menu.get(),
+            "img_resize": self.img_resize_menu.get(),
+            "aud_format": self.aud_format_menu.get(),
+            "aud_quality": self.aud_quality_menu.get(),
+            "dl_resolution": self.dl_res_menu.get(),
+            "dl_cookies": self.dl_cookies_menu.get(),
+            "dl_audio": bool(self.dl_audio_check.get()),
+            "size": self.target_entry.get().strip(),
+            "trim_start": self.trim_start.get().strip(),
+            "trim_end": self.trim_end.get().strip(),
+            "cut_only": bool(self.cut_only_check.get()),
+            "gif_start": self.gif_start.get().strip(),
+            "gif_len": self.gif_len.get().strip(),
+        }
+        if self.hw_menu is not None:
+            d["hardware"] = self.hw_menu.get()
+        return d
+
+    def _apply_preset(self, d: dict):
+        """Apply a preset dict; only keys it lists are touched, and only when
+        their value is valid on this machine (unknown values are skipped)."""
+        def menu(widget, key):
+            if widget is not None and key in d and d[key] in widget.cget("values"):
+                widget.set(d[key])
+
+        def entry(widget, key):
+            if key in d:
+                widget.delete(0, "end")
+                widget.insert(0, str(d[key]))
+
+        def check(widget, key):
+            if key in d:
+                widget.select() if d[key] else widget.deselect()
+
+        # Tab first so the right widgets exist, then everything else.
+        if d.get("tab") in self.tab_seg.cget("values"):
+            self.tab_seg.set(d["tab"])
+        if d.get("mode") in self.mode_seg.cget("values"):
+            self.mode_seg.set(d["mode"])
+        menu(self.codec_menu, "codec")
+        menu(self.hw_menu, "hardware")
+        menu(self.preset_menu, "preset")
+        menu(self.res_menu, "resolution")
+        menu(self.fps_menu, "fps")
+        menu(self.parts_menu, "parts")
+        menu(self.audio_menu, "audio")
+        menu(self.dither_menu, "dither")
+        menu(self.img_format_menu, "img_format")
+        menu(self.img_quality_menu, "img_quality")
+        menu(self.img_resize_menu, "img_resize")
+        menu(self.aud_format_menu, "aud_format")
+        menu(self.aud_quality_menu, "aud_quality")
+        menu(self.dl_res_menu, "dl_resolution")
+        menu(self.dl_cookies_menu, "dl_cookies")
+        check(self.dl_audio_check, "dl_audio")
+        check(self.cut_only_check, "cut_only")
+        entry(self.target_entry, "size")
+        entry(self.trim_start, "trim_start")
+        entry(self.trim_end, "trim_end")
+        entry(self.gif_start, "gif_start")
+        entry(self.gif_len, "gif_len")
+        if "crf" in d:
+            self.crf_slider.set(int(d["crf"]))
+            self._on_crf(int(d["crf"]))
+        self._on_codec_change()
+        self._refresh_mode()
+
+    def _on_preset_selected(self, name):
+        if name == PRESET_PLACEHOLDER:
+            return
+        preset = BUILTIN_PRESETS.get(name) or self._user_presets.get(name)
+        if preset:
+            self._apply_preset(preset)
+            self.status.configure(text=f"Applied preset: {name}")
+        self.presets_menu.set(PRESET_PLACEHOLDER)  # act like a menu of actions
+
+    def _open_preset_dialog(self):
+        """Save the current settings as a named preset, and delete existing ones."""
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Save preset")
+        dlg.geometry("380x320")
+        dlg.transient(self)
+        dlg.configure(fg_color=theme.BG)
+        ctk.CTkLabel(dlg, text="Save current settings as:",
+                     font=self.f("sans", 13)).pack(padx=16, pady=(16, 6), anchor="w")
+        row = ctk.CTkFrame(dlg, fg_color="transparent")
+        row.pack(fill="x", padx=16)
+        name_entry = ctk.CTkEntry(row, placeholder_text="Preset name")
+        name_entry.pack(side="left", fill="x", expand=True)
+
+        listbox = ctk.CTkScrollableFrame(dlg, fg_color=theme.SURFACE, height=140)
+        listbox.pack(fill="both", expand=True, padx=16, pady=12)
+
+        def rebuild_list():
+            for w in listbox.winfo_children():
+                w.destroy()
+            if not self._user_presets:
+                ctk.CTkLabel(listbox, text="No saved presets yet.",
+                             text_color=theme.TEXT_MUTED).pack(pady=10)
+            for pname in list(self._user_presets):
+                r = ctk.CTkFrame(listbox, fg_color="transparent")
+                r.pack(fill="x", pady=2)
+                ctk.CTkLabel(r, text=pname, anchor="w").pack(side="left", padx=(4, 0))
+                ctk.CTkButton(r, text="✕", width=26, fg_color="transparent",
+                              hover_color=theme.BORDER, text_color=theme.ERROR,
+                              command=lambda n=pname: delete(n)).pack(side="right")
+
+        def delete(n):
+            self._user_presets.pop(n, None)
+            self._refresh_preset_menu()
+            rebuild_list()
+
+        def save(_e=None):
+            name = name_entry.get().strip()
+            if not name or name == PRESET_PLACEHOLDER or name in BUILTIN_PRESETS:
+                self.status.configure(text="Pick a name that isn't a built-in preset.")
+                return
+            self._user_presets[name] = self._collect_preset()
+            self._refresh_preset_menu()
+            dlg.destroy()
+            self.status.configure(text=f"Saved preset: {name}")
+
+        ctk.CTkButton(row, text="Save", width=70, command=save).pack(side="left", padx=(8, 0))
+        name_entry.bind("<Return>", save)
+        rebuild_list()
+        name_entry.focus_set()
+        dlg.grab_set()
 
     def _set_app_icon(self):
         icon = resource_path("laxy.ico")

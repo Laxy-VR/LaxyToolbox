@@ -44,6 +44,22 @@ DL_COOKIES_OPTIONS = [("No cookies", None), ("Firefox", "firefox"),
 CODEC_OPTIONS = [("H.265 (recommended)", "h265"),
                  ("AV1 (smallest, modern devices)", "av1"),
                  ("H.264 (max compatibility)", "h264")]
+
+# One-click setting bundles. Values are the menu *labels* (what the widgets
+# show); a preset only sets the keys it lists, so it stays valid on any machine
+# (unknown values are skipped). Users can save their own on top of these.
+PRESET_PLACEHOLDER = "Presets ▾"
+BUILTIN_PRESETS = {
+    "Discord · under 500 MB": {"tab": "Compress", "mode": "Target size",
+                               "size": "500", "codec": "H.265 (recommended)"},
+    "Discord · under 10 MB": {"tab": "Compress", "mode": "Target size",
+                              "size": "10", "codec": "H.265 (recommended)"},
+    "Archive · top quality": {"tab": "Compress", "mode": "Best quality",
+                              "codec": "H.265 (recommended)", "crf": 18,
+                              "preset": "slow"},
+    "Smallest file · AV1": {"tab": "Compress", "mode": "Target size", "size": "25",
+                            "codec": "AV1 (smallest, modern devices)"},
+}
 HW_OPTIONS = [("CPU (best quality)", "cpu"), ("GPU (fastest)", "nvenc")]
 PARTS_OPTIONS = [("Auto", None), ("2", 2), ("3", 3), ("4", 4), ("6", 6), ("8", 8)]
 
