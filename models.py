@@ -7,7 +7,7 @@ import theme
 from probe import VideoInfo
 
 APP_NAME = "Laxy's Compressor"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
@@ -35,6 +35,11 @@ AUD_QUALITY_OPTIONS = [("High (256k)", "256k"), ("Balanced (192k)", "192k"),
 # Max resolution when downloading (yt-dlp -S res: sorting; None = best available)
 DL_RES_OPTIONS = [("Best available", None), ("Max 2160p", 2160),
                   ("Max 1080p", 1080), ("Max 720p", 720)]
+# Borrow a browser's logged-in session: the reliable fix when a site serves
+# only low quality (bot suspicion) or requires login. Firefox decrypts most
+# reliably on Windows; newer Chrome/Edge sometimes block cookie access.
+DL_COOKIES_OPTIONS = [("No cookies", None), ("Firefox", "firefox"),
+                      ("Edge", "edge"), ("Chrome", "chrome")]
 
 CODEC_OPTIONS = [("H.265 (recommended)", "h265"),
                  ("AV1 (smallest, modern devices)", "av1"),

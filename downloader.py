@@ -85,10 +85,12 @@ def looks_like_url(text: str) -> bool:
 
 
 def build_dl_command(url: str, template: str, max_height=None,
-                     audio_only=False) -> list:
+                     audio_only=False, cookies_browser=None) -> list:
     """The yt-dlp invocation (pure, for tests). `max_height` caps resolution
     via format sorting: prefer the best format no taller than the cap.
-    `audio_only` extracts just the audio track as MP3."""
+    `audio_only` extracts just the audio track as MP3. `cookies_browser`
+    borrows that browser's session, which unlocks full quality on sites that
+    withhold HD formats from clients they distrust."""
     cmd = [YTDLP_PATH, url,
            "--ignore-config",         # a user's own yt-dlp config (e.g. -f worst)
                                       # must never hijack the app's downloads
@@ -99,6 +101,8 @@ def build_dl_command(url: str, template: str, max_height=None,
            "--progress",              # --print implies quiet; force progress back on
            "--no-simulate",
            "--print", "after_move:filepath"]  # prints the final file path
+    if cookies_browser:
+        cmd += ["--cookies-from-browser", cookies_browser]
     if audio_only:
         cmd += ["-x", "--audio-format", "mp3"]
     else:
@@ -136,7 +140,7 @@ def newest_media_file(outdir: str, since: float):
 
 
 def download(url: str, outdir: str, on_progress, cancel_event, max_height=None,
-             audio_only=False):
+             audio_only=False, cookies_browser=None):
     """Download `url` into `outdir` as mp4 (or mp3). Returns (filepath, error).
 
     filepath is None on failure; error is None on success and "cancelled" when
@@ -144,7 +148,7 @@ def download(url: str, outdir: str, on_progress, cancel_event, max_height=None,
     """
     os.makedirs(outdir, exist_ok=True)
     template = os.path.join(outdir, "%(title).80s.%(ext)s")
-    cmd = build_dl_command(url, template, max_height, audio_only)
+    cmd = build_dl_command(url, template, max_height, audio_only, cookies_browser)
     started = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="utf-8", errors="replace",
@@ -185,7 +189,8 @@ def download(url: str, outdir: str, on_progress, cancel_event, max_height=None,
 
 
 def download_with_update_retry(url, outdir, on_progress, cancel_event,
-                               max_height=None, audio_only=False):
+                               max_height=None, audio_only=False,
+                               cookies_browser=None):
     """Download; on failure, self-update yt-dlp once and try again.
 
     Sites change their internals constantly and a stale yt-dlp is the most
@@ -193,9 +198,9 @@ def download_with_update_retry(url, outdir, on_progress, cancel_event,
     them without the user doing anything.
     """
     path, err = download(url, outdir, on_progress, cancel_event,
-                         max_height, audio_only)
+                         max_height, audio_only, cookies_browser)
     if path or err == "cancelled" or cancel_event.is_set():
         return path, err
     update_ytdlp()
     return download(url, outdir, on_progress, cancel_event,
-                    max_height, audio_only)
+                    max_height, audio_only, cookies_browser)

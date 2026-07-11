@@ -63,6 +63,13 @@ def test_build_dl_command_audio_only():
     assert "--merge-output-format" not in cmd
 
 
+def test_build_dl_command_cookies():
+    cmd = " ".join(build_dl_command("https://u", "tmpl", cookies_browser="firefox"))
+    assert "--cookies-from-browser firefox" in cmd
+    cmd = " ".join(build_dl_command("https://u", "tmpl"))
+    assert "--cookies-from-browser" not in cmd  # opt-in only
+
+
 def test_newest_media_file_fallback(tmp_path):
     """Regression: unicode titles mangle yt-dlp's printed path, so a completed
     download must be locatable by timestamp instead."""

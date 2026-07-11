@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.4 · 2026-07-11
+- New Cookies option on the Download tab: borrow a browser's logged in
+  session (Firefox, Edge, or Chrome) for sites that withhold HD formats or
+  require login. The low quality warning now points at it.
+
 ## v1.0.3 · 2026-07-11
 - Small screen support: the bottom bar (progress and action buttons) is now
   pinned and always visible, and the middle section scrolls when the screen

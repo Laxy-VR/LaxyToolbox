@@ -37,7 +37,8 @@ from encoder import (build_stages, build_gif_stages, build_image_stages,
 from models import (APP_NAME, APP_VERSION, CONFIG_PATH, TAB_COMPRESS, TAB_GIF,
                     TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD, MODE_QUALITY,
                     MODE_TARGET, MODE_SPLIT, MODE_GIF, MODE_IMAGE, MODE_AUDIO,
-                    MODE_DOWNLOAD, DL_RES_OPTIONS, CODEC_OPTIONS, HW_OPTIONS,
+                    MODE_DOWNLOAD, DL_RES_OPTIONS, DL_COOKIES_OPTIONS,
+                    CODEC_OPTIONS, HW_OPTIONS,
                     GIF_DITHER_OPTIONS, IMG_FORMAT_OPTIONS, IMG_QUALITY_OPTIONS,
                     IMG_RESIZE_OPTIONS, AUD_FORMAT_OPTIONS, AUD_QUALITY_OPTIONS,
                     PARTS_OPTIONS, PRESETS, RESOLUTIONS, FPS_OPTIONS,
@@ -321,6 +322,11 @@ class App(*_AppBase):
         self.dl_res_menu.pack(side="left", padx=(8, 0))
         self.dl_audio_check = ctk.CTkCheckBox(dlrow, text="Audio only (MP3)")
         self.dl_audio_check.pack(side="left", padx=(20, 0))
+        ctk.CTkLabel(dlrow, text="Cookies").pack(side="left", padx=(20, 0))
+        self.dl_cookies_menu = ctk.CTkOptionMenu(
+            dlrow, width=110, values=[o[0] for o in DL_COOKIES_OPTIONS])
+        self.dl_cookies_menu.set(DL_COOKIES_OPTIONS[0][0])
+        self.dl_cookies_menu.pack(side="left", padx=(8, 0))
 
         # Audio conversion controls (shown only on the Audio tab)
         self.audio_frame = ctk.CTkFrame(card, fg_color="transparent")
@@ -504,12 +510,14 @@ class App(*_AppBase):
         max_height = dict(DL_RES_OPTIONS)[self.dl_res_menu.get()]
         job.dl_cap = max_height
         audio_only = bool(self.dl_audio_check.get())
+        cookies = dict(DL_COOKIES_OPTIONS)[self.dl_cookies_menu.get()]
         threading.Thread(target=self._download_worker,
                          args=(job.id, url, self._download_dir(), cancel,
-                               max_height, audio_only),
+                               max_height, audio_only, cookies),
                          daemon=True).start()
 
-    def _download_worker(self, jid, url, outdir, cancel, max_height, audio_only):
+    def _download_worker(self, jid, url, outdir, cancel, max_height, audio_only,
+                         cookies):
         try:
             if not downloader.has_ytdlp():
                 self.msg_queue.put(("dl_setup", "Setting up the downloader (one time)…"))
@@ -522,7 +530,7 @@ class App(*_AppBase):
             path, err = downloader.download_with_update_retry(
                 url, outdir,
                 lambda frac: self.msg_queue.put(("dl_progress", jid, frac)),
-                cancel, max_height, audio_only)
+                cancel, max_height, audio_only, cookies)
             self.msg_queue.put(("dl_done", jid, path, err))
         except Exception as e:  # noqa: BLE001 - e.g. no internet for the fetch
             self.msg_queue.put(("dl_done", jid, None, str(e)))
@@ -1480,8 +1488,9 @@ class App(*_AppBase):
             # instead of letting someone discover it as "pixelated video".
             self.status.configure(text=(
                 f"Heads up: the site only served {info.height}p for "
-                f"“{os.path.basename(job.path)}”. Retrying later or on another "
-                "network often gets the full quality."))
+                f"“{os.path.basename(job.path)}”. Try the Cookies option on the "
+                "Download tab (sign in to the site in that browser first), or "
+                "retry later."))
         if info is not None and not self._prefilled:
             self._apply_recommended(recommend_settings(info))
             self._prefilled = True
@@ -1657,6 +1666,7 @@ class App(*_AppBase):
         set_menu(self.aud_format_menu, "aud_format")
         set_menu(self.aud_quality_menu, "aud_quality")
         set_menu(self.dl_res_menu, "dl_resolution")
+        set_menu(self.dl_cookies_menu, "dl_cookies")
         if cfg.get("dl_audio"):
             self.dl_audio_check.select()
         if cfg.get("size"):
@@ -1690,6 +1700,7 @@ class App(*_AppBase):
             "aud_format": self.aud_format_menu.get(),
             "aud_quality": self.aud_quality_menu.get(),
             "dl_resolution": self.dl_res_menu.get(),
+            "dl_cookies": self.dl_cookies_menu.get(),
             "dl_audio": bool(self.dl_audio_check.get()),
         }
         if self._gpu_ok is not None:

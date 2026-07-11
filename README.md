@@ -56,8 +56,9 @@ size.
 
 - **A download failed or came out low quality.** The downloader (yt-dlp)
   updates itself automatically, and the app shows the actual resolution that
-  arrived. If a site keeps serving low quality, it is usually rate limiting
-  your network; retry later. The full log of the last download is in
+  arrived. If a site keeps serving low quality (often stuck at 360p), it distrusts
+  your network: set the **Cookies** option on the Download tab to a browser
+  you are signed in with, or retry later. The full log of the last download is in
   `%LOCALAPPDATA%\LaxyCompressor\last_download.log`.
 - **The GPU option is missing.** The app verifies GPU encoding with a real
   test encode on first launch. No NVIDIA GPU (or a very old driver) means the
