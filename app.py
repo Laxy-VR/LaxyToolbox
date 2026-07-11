@@ -81,16 +81,23 @@ class App(*_AppBase):
         self._dl_cancels: dict = {}  # per-download cancel events, keyed by job id
 
         self._build_ui()
-        # Size to fit every control (measured on the taller Compress tab) and
-        # forbid shrinking below that, so the action buttons are never hidden.
+        # Size to fit every control (measured on the taller Compress tab).
         self.update_idletasks()
         needed = self.winfo_reqheight()
         usable = self.winfo_screenheight() - 80  # leave room for the taskbar
-        min_h = min(needed, usable)
-        self.minsize(680, min_h)
-        # Open a bit taller than the minimum when the screen allows it, giving
-        # the file queue some breathing room.
-        self.geometry(f"760x{min(needed + 60, usable)}")
+        if needed > usable:
+            # Screen too short for everything (small laptop, heavy display
+            # scaling): scroll the middle section instead of clipping it. The
+            # bottom bar is pinned, so the action buttons stay visible.
+            self._make_middle_scrollable()
+            self.update_idletasks()
+            self.minsize(680, min(520, usable))
+            self.geometry(f"760x{usable}")
+        else:
+            self.minsize(680, needed)
+            # Open a bit taller than the minimum when the screen allows it,
+            # giving the file queue some breathing room.
+            self.geometry(f"760x{min(needed + 60, usable)}")
         self._load_config()
         self._set_app_icon()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -130,6 +137,29 @@ class App(*_AppBase):
         ctk.CTkLabel(header, text="Batch compression · video, GIF, images, and audio",
                      text_color=theme.TEXT_MUTED, font=self.f("sans", 12)).pack(anchor="w")
 
+        # Bottom bar first (pinned): whatever happens to the middle section on
+        # short screens, progress and the action buttons stay visible.
+        bottom = ctk.CTkFrame(self, fg_color="transparent")
+        bottom.pack(side="bottom", fill="x")
+        self.progress = ctk.CTkProgressBar(bottom)
+        self.progress.set(0)
+        self.progress.pack(fill="x", padx=20, pady=(6, 4))
+        self.status = ctk.CTkLabel(bottom, text="Ready.", anchor="w",
+                                   text_color=theme.TEXT_MUTED, font=self.f("sans", 12))
+        self.status.pack(fill="x", padx=20)
+        actions = ctk.CTkFrame(bottom, fg_color="transparent")
+        actions.pack(fill="x", padx=20, pady=12)
+        actions.grid_columnconfigure((0, 1), weight=1)
+        self.start_btn = ctk.CTkButton(actions, text="Start compression",
+                                       height=40, font=self.f("sans", 14, "bold"),
+                                       command=self.on_start)
+        self.start_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.cancel_btn = ctk.CTkButton(actions, text="Cancel", height=40,
+                                        fg_color=theme.SURFACE2, hover_color=theme.BORDER,
+                                        text_color=theme.TEXT, command=self.on_cancel,
+                                        state="disabled")
+        self.cancel_btn.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
         # Toolbar
         toolbar = ctk.CTkFrame(self, fg_color="transparent")
         toolbar.pack(fill="x", padx=20, pady=(6, 6))
@@ -144,9 +174,23 @@ class App(*_AppBase):
                       width=150, fg_color=theme.SURFACE2, hover_color=theme.BORDER,
                       text_color=theme.TEXT).pack(side="right", padx=8)
 
+        # Middle section: queue + settings. Rebuilt inside a scrollable frame
+        # by _make_middle_scrollable() when the screen is too short for it.
+        self._middle = ctk.CTkFrame(self, fg_color="transparent")
+        self._middle.pack(fill="both", expand=True)
+        self._build_middle(self._middle)
+
+    def _make_middle_scrollable(self):
+        """Swap the middle section into a scrollable container (short screens)."""
+        self._middle.destroy()
+        self._middle = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self._middle.pack(fill="both", expand=True)
+        self._build_middle(self._middle, queue_height=90)
+
+    def _build_middle(self, mid, queue_height=150):
         # Queue
-        self.queue_frame = ctk.CTkScrollableFrame(self, fg_color=theme.SURFACE,
-                                                  corner_radius=12, height=150)
+        self.queue_frame = ctk.CTkScrollableFrame(mid, fg_color=theme.SURFACE,
+                                                  corner_radius=12, height=queue_height)
         self.queue_frame.pack(fill="both", expand=True, padx=20, pady=(0, 8))
         self.empty_label = ctk.CTkLabel(
             self.queue_frame,
@@ -155,14 +199,14 @@ class App(*_AppBase):
         self.empty_label.pack(pady=30)
 
         # Selected-file details
-        self.detail_label = ctk.CTkLabel(self, text="", anchor="w", justify="left",
+        self.detail_label = ctk.CTkLabel(mid, text="", anchor="w", justify="left",
                                          wraplength=640, text_color=theme.TEXT_MUTED,
                                          font=self.f("mono", 11))
         self.detail_label.pack(fill="x", padx=20, pady=(0, 6))
 
         # Top-level tab: compress to H.265, or make/shrink GIFs
         self.tab_seg = ctk.CTkSegmentedButton(
-            self, values=[TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD],
+            mid, values=[TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD],
             command=self._on_tab_change,
             font=self.f("sans", 13, "bold"), height=34)
         self.tab_seg.set(TAB_COMPRESS)
@@ -170,7 +214,7 @@ class App(*_AppBase):
 
         # Settings card (shared across the whole queue). Two menu columns keep
         # the card short enough to fit fully on a 1080p screen.
-        card = ctk.CTkFrame(self, fg_color=theme.SURFACE, corner_radius=12)
+        card = ctk.CTkFrame(mid, fg_color=theme.SURFACE, corner_radius=12)
         card.pack(fill="x", padx=20, pady=(0, 8))
         card.grid_columnconfigure(1, weight=1)
         card.grid_columnconfigure(3, weight=1)
@@ -355,7 +399,7 @@ class App(*_AppBase):
                              padx=14, pady=(4, 12))
 
         # Output folder
-        out = ctk.CTkFrame(self, fg_color="transparent")
+        out = ctk.CTkFrame(mid, fg_color="transparent")
         out.pack(fill="x", padx=20, pady=(0, 6))
         out.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(out, text="Save to").grid(row=0, column=0, padx=(0, 8))
@@ -366,28 +410,6 @@ class App(*_AppBase):
         self.outdir_entry.bind("<KeyRelease>", lambda _e: self._update_note())
         ctk.CTkButton(out, text="Browse", width=80, command=self.on_browse_outdir).grid(
             row=0, column=2, padx=(8, 0))
-
-        # Progress + status
-        self.progress = ctk.CTkProgressBar(self)
-        self.progress.set(0)
-        self.progress.pack(fill="x", padx=20, pady=(6, 4))
-        self.status = ctk.CTkLabel(self, text="Ready.", anchor="w",
-                                   text_color=theme.TEXT_MUTED, font=self.f("sans", 12))
-        self.status.pack(fill="x", padx=20)
-
-        # Actions
-        actions = ctk.CTkFrame(self, fg_color="transparent")
-        actions.pack(fill="x", padx=20, pady=12)
-        actions.grid_columnconfigure((0, 1), weight=1)
-        self.start_btn = ctk.CTkButton(actions, text="Start compression",
-                                       height=40, font=self.f("sans", 14, "bold"),
-                                       command=self.on_start)
-        self.start_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self.cancel_btn = ctk.CTkButton(actions, text="Cancel", height=40,
-                                        fg_color=theme.SURFACE2, hover_color=theme.BORDER,
-                                        text_color=theme.TEXT, command=self.on_cancel,
-                                        state="disabled")
-        self.cancel_btn.grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
         self._refresh_mode()  # sync all mode-dependent UI now that widgets exist
 

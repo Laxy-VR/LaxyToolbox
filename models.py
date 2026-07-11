@@ -7,7 +7,7 @@ import theme
 from probe import VideoInfo
 
 APP_NAME = "Laxy's Compressor"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
