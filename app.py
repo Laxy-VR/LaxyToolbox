@@ -667,10 +667,18 @@ class App(*_AppBase):
             self._update_note()
 
     def _probe_worker(self, jobs):
+        from probe import extract_frame_png
         for job in jobs:
             try:
                 info = probe_video(job.path)
                 self.msg_queue.put(("probed", job.id, info, None))
+                # A small preview for the row, generated serially in this same
+                # thread so a big batch doesn't spawn a herd of ffmpeg calls.
+                if not is_audio(job.path):
+                    seconds = 1.0 if info.duration and info.duration > 2 else 0.0
+                    png = extract_frame_png(job.path, seconds, max_width=96)
+                    if png:
+                        self.msg_queue.put(("row_thumb", job.id, png))
             except Exception as e:  # noqa: BLE001
                 self.msg_queue.put(("probed", job.id, None, str(e)))
 
@@ -1501,6 +1509,10 @@ class App(*_AppBase):
             self._show_update(msg[1], msg[2])
         elif kind == "gpu_ok":
             self._on_gpu_probed(msg[1])
+        elif kind == "row_thumb":
+            job = self._job(msg[1])
+            if job and job.row:
+                job.row.set_thumbnail(msg[2])
 
     def _job(self, jid):
         return next((j for j in self.jobs if j.id == jid), None)
