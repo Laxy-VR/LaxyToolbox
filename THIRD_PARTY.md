@@ -1,6 +1,6 @@
 # Third party software
 
-Laxy's Compressor itself is MIT licensed (see LICENSE). The distributed
+Laxy's Toolbox itself is MIT licensed (see LICENSE). The distributed
 Windows executable bundles or uses the following software, each under its own
 license:
 

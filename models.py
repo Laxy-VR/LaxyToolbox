@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import theme
 from probe import VideoInfo
 
-APP_NAME = "Laxy's Compressor"
+APP_NAME = "Laxy's Toolbox"
 APP_VERSION = "1.0.5"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.

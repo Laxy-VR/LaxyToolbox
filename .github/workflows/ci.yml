@@ -48,4 +48,4 @@ jobs:
       - name: Attach exe to release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Laxy Compressor.exe
+          files: dist/Laxy Toolbox.exe

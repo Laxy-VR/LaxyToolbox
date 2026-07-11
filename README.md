@@ -1,13 +1,13 @@
-# Laxy's Compressor
+# Laxy's Toolbox
 
 A batch media toolbox for Windows: compress videos, make GIFs, convert images
 and audio, and download from links. One portable exe, no install.
 
-![Laxy's Compressor](docs/screenshot.png)
+![Laxy's Toolbox](docs/screenshot.png)
 
 ## Download
 
-Grab `Laxy.Compressor.exe` from the
+Grab `Laxy.Toolbox.exe` from the
 [latest release](https://github.com/Laxy-VR/LaxyToolbox/releases/latest) and
 double click it. No Python, no ffmpeg, no installer needed.
 
