@@ -55,6 +55,42 @@ def test_builtin_presets_reference_valid_labels():
             assert p["codec"] in codec_labels, name
 
 
+@pytest.mark.parametrize("raw,needle", [
+    (["frame= 100", "No space left on device"], "disk is full"),
+    (["Permission denied"], "Close it"),
+    (["moov atom not found"], "incomplete or damaged"),
+    (["[hevc_nvenc] No capable devices found"], "graphics card"),
+    (["ERROR: Unable to download webpage: <urlopen error getaddrinfo failed>"],
+     "No internet"),
+    (["ERROR: [youtube] abc: Private video. Sign in if you've been granted access"],
+     "private"),
+    (["ERROR: Video unavailable"], "no longer available"),
+    (["ERROR: [youtube] abc: Sign in to confirm your age"], "age restricted"),
+    (["ERROR: requested format is not available. Use --list-formats"],
+     "Best available"),
+    (["ERROR: unable to download video data: HTTP Error 403: Forbidden"],
+     "Cookies"),
+    (["ERROR: Unsupported URL: https://example.com/x"], "downloader supports"),
+])
+def test_friendly_error_maps_known_failures(raw, needle):
+    from models import friendly_error
+    assert needle.lower() in friendly_error(raw).lower()
+
+
+def test_friendly_error_fallback_strips_noise():
+    from models import friendly_error
+    # Unknown failure: show the last line without the ERROR:/[tag] noise.
+    assert friendly_error(["ERROR: [generic] site: something odd happened"]) \
+        == "site: something odd happened"
+    assert friendly_error([]) == "Something went wrong."
+    assert friendly_error(None) == "Something went wrong."
+
+
+def test_friendly_error_accepts_a_string():
+    from models import friendly_error
+    assert "disk is full" in friendly_error("No space left on device").lower()
+
+
 @pytest.mark.parametrize("latest,current,newer", [
     ("v1.1", "1.0", True),
     ("1.0.1", "1.0", True),

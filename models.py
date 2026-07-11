@@ -147,6 +147,98 @@ def human_size(num_bytes) -> str:
     return f"{size:.1f} PB"
 
 
+# Raw ffmpeg / yt-dlp output is cryptic. Map the tell tale phrases we have seen
+# to a plain sentence a non technical friend can act on. Order matters: the
+# most specific phrases come first. The raw log is still saved for diagnosis.
+_ERROR_HINTS = [
+    # disk and output file
+    (("no space left", "not enough space", "disk full"),
+     "Your disk is full. Free up some space and try again."),
+    (("permission denied", "error opening output", "could not open file",
+      "unable to open"),
+     "Could not save the file. Close it if it is open in a player, or choose a "
+     "different output folder."),
+    # damaged or missing source
+    (("moov atom not found", "invalid data found", "could not find codec "
+      "parameters", "error while decoding", "header missing"),
+     "The source file looks incomplete or damaged. Try playing it first to "
+     "check it works."),
+    (("no such file", "does not exist"),
+     "The source file was moved or deleted before it could be processed."),
+    (("not divisible by 2", "divisible by 2"),
+     "That video has an unusual size. Try a different resolution setting."),
+    # GPU encoding
+    (("cannot load nvcuda", "openencodesessionex", "no capable devices",
+      "initializeencoder failed", "nvenc"),
+     "Your graphics card could not handle this encode. Set Hardware to CPU and "
+     "try again."),
+    # downloads: connectivity
+    (("getaddrinfo", "failed to resolve", "name resolution",
+      "unable to download webpage", "network is unreachable",
+      "temporary failure", "urlopen error", "connection timed out",
+      "timed out"),
+     "No internet connection, or the site did not respond. Check your "
+     "connection and try again."),
+    # downloads: availability
+    (("private video", "this video is private"),
+     "That video is private, so it cannot be downloaded."),
+    (("video unavailable", "no longer available", "removed by the user",
+      "account associated with this video has been terminated"),
+     "That video is no longer available."),
+    (("confirm your age", "age restricted", "age-restricted", "inappropriate "
+      "for some users"),
+     "That video is age restricted. Pick a browser under Cookies to use your "
+     "signed in session."),
+    (("members-only", "members only", "join this channel",
+      "available to music premium"),
+     "That video is for members only, so it cannot be downloaded."),
+    (("requested format is not available", "requested format not available"),
+     "The quality you asked for is not offered for this video. Try Best "
+     "available under the resolution menu."),
+    (("http error 429", "too many requests"),
+     "The site is limiting downloads right now. Wait a while and try again."),
+    (("http error 403", "forbidden"),
+     "The site refused the download. Pick a browser under Cookies to use your "
+     "signed in session."),
+    (("this live event will begin", "premieres in", "live event will begin",
+      "not started"),
+     "That video is a scheduled stream that has not started yet."),
+    (("unsupported url",),
+     "That link is not from a site the downloader supports."),
+    (("is not a valid url", "not a valid url"),
+     "That does not look like a valid link. Check you copied the whole URL."),
+    (("unable to extract", "unable to find"),
+     "The site changed and the downloader could not read it. Try again later, "
+     "or use a different link."),
+]
+
+
+def friendly_error(raw) -> str:
+    """Turn a raw ffmpeg/yt-dlp failure into one plain, actionable sentence.
+
+    `raw` may be a string or a list of log lines. Falls back to a tidied
+    version of the last line when nothing matches a known pattern."""
+    if raw is None:
+        return "Something went wrong."
+    lines = raw if isinstance(raw, (list, tuple)) else str(raw).splitlines()
+    lines = [str(ln).strip() for ln in lines if str(ln).strip()]
+    if not lines:
+        return "Something went wrong."
+    blob = "\n".join(lines).lower()
+    for needles, message in _ERROR_HINTS:
+        if any(n in blob for n in needles):
+            return message
+    # No known pattern: show the last line, minus noisy prefixes like
+    # "ERROR:" or "[youtube] abc123:" so it reads a little cleaner.
+    last = lines[-1]
+    for prefix in ("ERROR: ", "ERROR:"):
+        if last.startswith(prefix):
+            last = last[len(prefix):].strip()
+    if last.startswith("[") and "] " in last:
+        last = last.split("] ", 1)[1].strip()
+    return last or "Something went wrong."
+
+
 @dataclass
 class Job:
     id: int

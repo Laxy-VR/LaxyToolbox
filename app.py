@@ -43,7 +43,7 @@ from models import (APP_NAME, APP_VERSION, CONFIG_PATH, TAB_COMPRESS, TAB_GIF,
                     IMG_RESIZE_OPTIONS, AUD_FORMAT_OPTIONS, AUD_QUALITY_OPTIONS,
                     PARTS_OPTIONS, PRESETS, RESOLUTIONS, FPS_OPTIONS,
                     AUDIO_OPTIONS, MEDIA_EXTS, is_image, is_audio, human_size,
-                    unique_path, Job, status_display)
+                    unique_path, friendly_error, Job, status_display)
 from widgets import QueueRow, Tooltip
 from sysutil import (set_keep_awake, flash_taskbar, resource_path,
                      latest_release, is_newer_version)
@@ -587,7 +587,7 @@ class App(*_AppBase):
             self._set_status(jid, "cancelled")
             return
         if path is None:
-            job.status, job.error = "failed", err
+            job.status, job.error = "failed", friendly_error(err)
             job.row.render(selected=(job.id == self.selected_id))
             if job.id == self.selected_id:
                 self._update_details()
@@ -1568,7 +1568,7 @@ class App(*_AppBase):
             if job.limit_mb and sizes and max(sizes) > job.limit_mb * 1024 * 1024:
                 job.over_limit = True  # a file/part landed over the requested limit
         elif tail:
-            job.error = tail[-1]
+            job.error = friendly_error(tail)
         job.row.render(selected=(job.id == self.selected_id))
         if job.id == self.selected_id:
             self._update_details()
