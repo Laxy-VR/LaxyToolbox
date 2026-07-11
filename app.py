@@ -44,7 +44,7 @@ from models import (APP_NAME, APP_VERSION, CONFIG_PATH, TAB_COMPRESS, TAB_GIF,
                     PARTS_OPTIONS, PRESETS, RESOLUTIONS, FPS_OPTIONS,
                     AUDIO_OPTIONS, MEDIA_EXTS, is_image, is_audio, human_size,
                     unique_path, Job, status_display)
-from widgets import QueueRow
+from widgets import QueueRow, Tooltip
 from sysutil import (set_keep_awake, flash_taskbar, resource_path,
                      latest_release, is_newer_version)
 from models import GITHUB_REPO
@@ -428,6 +428,39 @@ class App(*_AppBase):
             row=0, column=2, padx=(8, 0))
 
         self._refresh_mode()  # sync all mode-dependent UI now that widgets exist
+        self._add_tooltips()
+
+    def _add_tooltips(self):
+        """Plain-language hints for the settings a newcomer won't know."""
+        fam = self.fonts["sans"]
+        tips = {
+            self.codec_menu: "H.265 is the best all-round choice. AV1 makes the "
+                             "smallest files but needs a fairly modern device to "
+                             "play. H.264 plays on everything but is the largest.",
+            self.crf_slider: "Quality knob. Lower = better looking and bigger; "
+                             "higher = smaller and softer. ~18 is near lossless, "
+                             "~28 is small.",
+            self.preset_menu: "Encoding speed. Slower squeezes the file a little "
+                              "smaller at the same quality, but takes longer.",
+            self.audio_menu: "Copy keeps the original audio untouched. Remove "
+                             "audio strips the sound (handy for gameplay clips).",
+            self.res_menu: "Downscale the video. Keep original unless you want a "
+                           "smaller frame size.",
+            self.dl_cookies_menu: "If a site only gives low quality or needs a "
+                                  "login, pick a browser you're signed into and "
+                                  "it downloads as that browser.",
+            self.cut_only_check: "Trim without re-encoding: instant and lossless, "
+                                 "but cut points snap to keyframes (may start a "
+                                 "second or two early).",
+        }
+        if self.hw_menu is not None:
+            tips[self.hw_menu] = ("GPU is much faster. CPU gives slightly better "
+                                  "quality per megabyte.")
+        for widget, text in tips.items():
+            try:
+                Tooltip(widget, text, fam)
+            except NotImplementedError:
+                pass  # some CustomTkinter widgets don't support bind
 
     def _menu_row(self, parent, row, col, label, values, default, attr, command=None):
         lbl = ctk.CTkLabel(parent, text=label)

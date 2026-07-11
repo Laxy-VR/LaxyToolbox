@@ -1,11 +1,54 @@
 """Custom widgets for the queue list."""
 
 import os
+import tkinter as tk
 
 import customtkinter as ctk
 
 import theme
 from models import status_display, kind_icon
+
+
+class Tooltip:
+    """A small hover tooltip. Appears after a short delay, hides on leave."""
+
+    def __init__(self, widget, text, family="Segoe UI"):
+        self.widget = widget
+        self.text = text
+        self.family = family
+        self._tip = None
+        self._after = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<Button-1>", self._hide, add="+")
+
+    def _schedule(self, _e=None):
+        self._cancel()
+        self._after = self.widget.after(500, self._show)
+
+    def _show(self):
+        if self._tip is not None:
+            return
+        x = self.widget.winfo_rootx() + 16
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self._tip = tk.Toplevel(self.widget)
+        self._tip.wm_overrideredirect(True)
+        self._tip.wm_geometry(f"+{x}+{y}")
+        self._tip.configure(bg=theme.BORDER)
+        tk.Label(self._tip, text=self.text, justify="left", wraplength=300,
+                 bg=theme.SURFACE2, fg=theme.TEXT, font=(self.family, 9),
+                 padx=8, pady=6).pack(padx=1, pady=1)
+
+    def _hide(self, _e=None):
+        self._cancel()
+        if self._tip is not None:
+            self._tip.destroy()
+            self._tip = None
+
+    def _cancel(self):
+        if self._after is not None:
+            self.widget.after_cancel(self._after)
+            self._after = None
 
 
 class QueueRow(ctk.CTkFrame):
