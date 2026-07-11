@@ -106,6 +106,8 @@ class App(*_AppBase):
         self.bind("<Control-o>", lambda _e: self.on_add_files())
         self.bind("<Delete>", self._on_delete_key)
         self.bind("<Return>", self._on_return_key)
+        self.bind("<Alt-Up>", lambda _e: self._move_selected(-1))
+        self.bind("<Alt-Down>", lambda _e: self._move_selected(1))
         if self._dnd_ok:
             self.drop_target_register(DND_FILES)
             self.dnd_bind("<<Drop>>", self._on_drop)
@@ -172,9 +174,12 @@ class App(*_AppBase):
         ctk.CTkButton(toolbar, text="Clear", command=self.on_clear, width=80,
                       fg_color=theme.SURFACE2, hover_color=theme.BORDER,
                       text_color=theme.TEXT).pack(side="right")
+        ctk.CTkButton(toolbar, text="Clear finished", command=self.on_clear_finished,
+                      width=120, fg_color=theme.SURFACE2, hover_color=theme.BORDER,
+                      text_color=theme.TEXT).pack(side="right", padx=8)
         ctk.CTkButton(toolbar, text="Open output folder", command=self.on_open_output,
                       width=150, fg_color=theme.SURFACE2, hover_color=theme.BORDER,
-                      text_color=theme.TEXT).pack(side="right", padx=8)
+                      text_color=theme.TEXT).pack(side="right")
 
         # Middle section: queue + settings. Rebuilt inside a scrollable frame
         # by _make_middle_scrollable() when the screen is too short for it.
@@ -675,6 +680,60 @@ class App(*_AppBase):
         self.empty_label.pack(pady=30)
         self._update_counts()
 
+    # Statuses that mean a row is finished and safe to sweep. In-flight rows
+    # (reading, ready, queued, encoding, downloading) are kept.
+    _FINISHED = {"done", "failed", "cancelled", "downloaded"}
+
+    def on_clear_finished(self):
+        """Tidy the queue after a batch: drop finished rows, keep the rest."""
+        if self.start_btn.cget("state") == "disabled":
+            return
+        remaining = []
+        for job in self.jobs:
+            if job.status in self._FINISHED:
+                job.row.destroy()
+                if self.selected_id == job.id:
+                    self.selected_id = None
+            else:
+                remaining.append(job)
+        if len(remaining) == len(self.jobs):
+            return  # nothing finished
+        self.jobs = remaining
+        if self.selected_id is None:  # reselect something, or clear the details
+            nxt = next((j for j in self.jobs if j.info), None)
+            if nxt:
+                self._select_job(nxt)
+            else:
+                self.detail_label.configure(text="")
+                self.note_label.configure(text="")
+        if not self.jobs:
+            self.empty_label.pack(pady=30)
+        self._update_counts()
+
+    def _repack_rows(self):
+        """Re-pack every row to match self.jobs order (after a reorder)."""
+        for job in self.jobs:
+            job.row.pack_forget()
+        for job in self.jobs:
+            job.row.pack(fill="x", padx=6, pady=4)
+
+    def _move_job(self, job, delta):
+        """Shift a row up (delta -1) or down (delta +1) in the queue."""
+        if self.start_btn.cget("state") == "disabled":
+            return  # don't reorder mid-encode
+        i = self.jobs.index(job)
+        j = i + delta
+        if 0 <= j < len(self.jobs):
+            self.jobs[i], self.jobs[j] = self.jobs[j], self.jobs[i]
+            self._repack_rows()
+
+    def _move_selected(self, delta):
+        if isinstance(self.focus_get(), tk.Entry):
+            return  # don't hijack arrow keys while editing a text field
+        job = self._selected_job()
+        if job is not None:
+            self._move_job(job, delta)
+
     def on_browse_outdir(self):
         folder = filedialog.askdirectory(title="Choose output folder")
         if folder:
@@ -1135,6 +1194,14 @@ class App(*_AppBase):
                              command=lambda: self._reveal(os.path.dirname(job.path)))
             menu.add_command(label="Queue for compression",
                              command=lambda: self._requeue_download(job))
+            menu.add_separator()
+        # Reorder (only when the queue isn't locked by a run in progress).
+        if self.start_btn.cget("state") != "disabled" and len(self.jobs) > 1:
+            i = self.jobs.index(job)
+            if i > 0:
+                menu.add_command(label="Move up", command=lambda: self._move_job(job, -1))
+            if i < len(self.jobs) - 1:
+                menu.add_command(label="Move down", command=lambda: self._move_job(job, 1))
             menu.add_separator()
         menu.add_command(label="Remove from queue", command=lambda: self._remove_job(job))
         try:
