@@ -27,7 +27,7 @@ except Exception:  # noqa: BLE001 - drag-and-drop is optional
 
 
 import theme
-from probe import (probe_video, recommend_settings, gpu_codecs,
+from probe import (probe_video, recommend_settings, gpu_codecs, nvenc_works,
                    estimate_h265_bitrate_kbps, VideoInfo)
 from encoder import (build_stages, build_gif_stages, build_image_stages,
                      build_audio_stages, build_cut_stages, suggest_parts,
@@ -73,6 +73,8 @@ class App(*_AppBase):
         self.selected_id: int | None = None
         self._next_id = 0
         self._prefilled = False
+        # None = unverified (offer GPU, verify in background), True/False = known
+        self._gpu_ok = None
 
         self.cancel_event = threading.Event()
         self.msg_queue: queue.Queue = queue.Queue()
@@ -101,6 +103,11 @@ class App(*_AppBase):
         if GITHUB_REPO:
             self.after(1500, lambda: threading.Thread(
                 target=self._update_check_worker, daemon=True).start())
+        # Verify NVENC actually works here unless a previous run already
+        # confirmed it (an AMD GPU or old NVIDIA driver fails at encode time
+        # even though the bundled ffmpeg lists the encoders).
+        if self._gpu_codecs and self._gpu_ok is not True:
+            threading.Thread(target=self._gpu_probe_worker, daemon=True).start()
         self.after(100, self._poll_queue)
 
     # ---------- fonts ----------
@@ -906,7 +913,7 @@ class App(*_AppBase):
                    self.preset_menu, self.preset_menu_label,
                    self.audio_menu, self.audio_menu_label,
                    self.codec_menu, self.codec_menu_label]
-        if self.hw_menu is not None:
+        if self.hw_menu is not None and self._gpu_ok is not False:
             widgets += [self.hw_menu, self.hw_menu_label]
         return widgets
 
@@ -957,8 +964,9 @@ class App(*_AppBase):
         return dict(CODEC_OPTIONS)[self.codec_menu.get()]
 
     def _hw_value(self):
-        """'cpu' or 'nvenc', falling back to cpu when the GPU can't do the codec."""
-        if self.hw_menu is None:
+        """'cpu' or 'nvenc', falling back to cpu when the GPU can't do the codec
+        or the machine failed the real NVENC probe."""
+        if self.hw_menu is None or self._gpu_ok is False:
             return "cpu"
         hw = dict(HW_OPTIONS)[self.hw_menu.get()]
         if hw == "nvenc" and self._codec_value() not in self._gpu_codecs:
@@ -1418,6 +1426,8 @@ class App(*_AppBase):
             self._on_dl_done(msg[1], msg[2], msg[3])
         elif kind == "update":
             self._show_update(msg[1], msg[2])
+        elif kind == "gpu_ok":
+            self._on_gpu_probed(msg[1])
 
     def _job(self, jid):
         return next((j for j in self.jobs if j.id == jid), None)
@@ -1604,6 +1614,10 @@ class App(*_AppBase):
             if menu is not None and cfg.get(key) in menu.cget("values"):
                 menu.set(cfg[key])
 
+        if isinstance(cfg.get("nvenc_ok"), bool):
+            self._gpu_ok = cfg["nvenc_ok"]
+            if self._gpu_ok is False:
+                self._hide_gpu_option()
         if cfg.get("tab") in (TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO,
                               TAB_DOWNLOAD):
             self.tab_seg.set(cfg["tab"])
@@ -1656,6 +1670,8 @@ class App(*_AppBase):
             "dl_resolution": self.dl_res_menu.get(),
             "dl_audio": bool(self.dl_audio_check.get()),
         }
+        if self._gpu_ok is not None:
+            cfg["nvenc_ok"] = self._gpu_ok
         if self.hw_menu is not None:
             cfg["hardware"] = self.hw_menu.get()
         try:
@@ -1671,6 +1687,25 @@ class App(*_AppBase):
                 self.iconbitmap(icon)
             except Exception:  # noqa: BLE001 - non-Windows or bad icon
                 pass
+
+    # ---------- GPU capability probe ----------
+    def _gpu_probe_worker(self):
+        self.msg_queue.put(("gpu_ok", nvenc_works()))
+
+    def _on_gpu_probed(self, ok):
+        self._gpu_ok = ok
+        if not ok:
+            self._hide_gpu_option()
+        self._save_config()  # cache the verdict so working GPUs skip the probe
+
+    def _hide_gpu_option(self):
+        if self.hw_menu is None:
+            return
+        self.hw_menu.set(HW_OPTIONS[0][0])  # CPU
+        self.hw_menu.grid_remove()
+        self.hw_menu_label.grid_remove()
+        self.crf_caption.configure(text="Quality (CRF)")
+        self._sync_controls()
 
     # ---------- app update check ----------
     def _update_check_worker(self):

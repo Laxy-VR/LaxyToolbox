@@ -62,6 +62,26 @@ def gpu_codecs() -> set:
             if name in encoders}
 
 
+def nvenc_works() -> bool:
+    """Actually try a one frame NVENC encode.
+
+    Encoder presence in the ffmpeg build says nothing about THIS machine:
+    an AMD/Intel GPU or a too-old NVIDIA driver still fails at encode time,
+    so the GPU option should only be offered when a real encode succeeds.
+    Takes about a second; callers should run it off the UI thread and cache.
+    """
+    if not has_nvenc():
+        return False
+    cmd = [FFMPEG, "-v", "error", "-f", "lavfi", "-i", "color=black:s=256x256:d=0.1",
+           "-frames:v", "1", "-c:v", "hevc_nvenc", "-f", "null", os.devnull]
+    try:
+        r = subprocess.run(cmd, capture_output=True, creationflags=NO_WINDOW,
+                           timeout=20)
+        return r.returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def extract_frame_png(path: str, seconds: float, max_width: int = 320) -> bytes | None:
     """Grab one frame at `seconds` as PNG bytes (for preview thumbnails)."""
     cmd = [FFMPEG, "-ss", f"{max(seconds, 0):.3f}", "-i", path,
