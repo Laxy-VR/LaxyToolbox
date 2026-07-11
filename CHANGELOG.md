@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.5 · 2026-07-11
+- Fixed downloads being stuck at 360p on machines without ffmpeg installed:
+  yt-dlp needs ffmpeg to merge HD video and audio streams, and it could not
+  see the copy bundled inside the app. Downloads now always use the bundled
+  ffmpeg, independent of what is installed on the machine.
+
 ## v1.0.4 · 2026-07-11
 - New Cookies option on the Download tab: borrow a browser's logged in
   session (Firefox, Edge, or Chrome) for sites that withhold HD formats or

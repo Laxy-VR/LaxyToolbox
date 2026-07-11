@@ -63,6 +63,20 @@ def test_build_dl_command_audio_only():
     assert "--merge-output-format" not in cmd
 
 
+def test_build_dl_command_points_ytdlp_at_bundled_ffmpeg(monkeypatch):
+    """Regression: without ffmpeg, yt-dlp cannot merge HD streams and YouTube
+    degrades to the lone 360p pre-merged format. The app must hand yt-dlp its
+    bundled ffmpeg instead of relying on the user's PATH."""
+    import downloader as dl
+    monkeypatch.setattr(dl, "FFMPEG", r"C:\bundle\ffmpeg.exe")
+    cmd = " ".join(dl.build_dl_command("https://u", "tmpl"))
+    assert r"--ffmpeg-location C:\bundle" in cmd
+    # dev mode (bare name from PATH): no flag, let yt-dlp search normally
+    monkeypatch.setattr(dl, "FFMPEG", "ffmpeg")
+    cmd = " ".join(dl.build_dl_command("https://u", "tmpl"))
+    assert "--ffmpeg-location" not in cmd
+
+
 def test_build_dl_command_cookies():
     cmd = " ".join(build_dl_command("https://u", "tmpl", cookies_browser="firefox"))
     assert "--cookies-from-browser firefox" in cmd

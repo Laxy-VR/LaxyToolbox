@@ -13,7 +13,7 @@ import time
 import urllib.request
 from collections import deque
 
-from probe import NO_WINDOW
+from probe import NO_WINDOW, FFMPEG
 
 YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 APPDATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA")
@@ -101,6 +101,11 @@ def build_dl_command(url: str, template: str, max_height=None,
            "--progress",              # --print implies quiet; force progress back on
            "--no-simulate",
            "--print", "after_move:filepath"]  # prints the final file path
+    # yt-dlp needs ffmpeg to merge HD video+audio streams; without it, sites
+    # like YouTube degrade to the single pre-merged 360p stream. Point it at
+    # the app's bundled ffmpeg so downloads never depend on the user's PATH.
+    if os.path.isabs(FFMPEG):
+        cmd += ["--ffmpeg-location", os.path.dirname(FFMPEG)]
     if cookies_browser:
         cmd += ["--cookies-from-browser", cookies_browser]
     if audio_only:
