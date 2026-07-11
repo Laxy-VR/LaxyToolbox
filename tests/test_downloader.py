@@ -5,8 +5,8 @@ import pytest
 import os
 import time
 
-from downloader import (parse_progress, looks_like_url, build_dl_command,
-                        newest_media_file)
+from downloader import (parse_progress, parse_item, looks_like_url,
+                        build_dl_command, newest_media_file, media_files_since)
 
 
 @pytest.mark.parametrize("line,expected", [
@@ -16,6 +16,16 @@ from downloader import (parse_progress, looks_like_url, build_dl_command,
 ])
 def test_parse_progress(line, expected):
     assert parse_progress(line) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("line,expected", [
+    ("[download] Downloading item 3 of 12", (3, 12)),
+    ("[download] Downloading video 1 of 5", (1, 5)),
+    ("[download]  42.3% of 120MiB", None),
+    ("[youtube] abc: Downloading webpage", None),
+])
+def test_parse_item(line, expected):
+    assert parse_item(line) == expected
 
 
 @pytest.mark.parametrize("line", [
@@ -50,6 +60,14 @@ def test_build_dl_command_defaults():
     # Regression: a machine-local yt-dlp config (e.g. "-f worst") must never
     # hijack the app's downloads into low quality.
     assert "--ignore-config" in cmd
+
+
+def test_build_dl_command_playlist():
+    cmd = " ".join(build_dl_command("https://u", "tmpl", playlist=True))
+    assert "--yes-playlist" in cmd and "--no-playlist" not in cmd
+    # default stays single-video
+    cmd = " ".join(build_dl_command("https://u", "tmpl"))
+    assert "--no-playlist" in cmd and "--yes-playlist" not in cmd
 
 
 def test_build_dl_command_resolution_cap():
@@ -97,6 +115,20 @@ def test_newest_media_file_fallback(tmp_path):
 
     found = newest_media_file(str(tmp_path), since=time.time() - 60)
     assert found == str(fresh)
+
+
+def test_media_files_since_returns_all_sorted(tmp_path):
+    """A playlist download reconciles against every file that landed, so the
+    sweep must return them all, oldest first."""
+    now = time.time()
+    a = tmp_path / "1.mp4"; a.write_bytes(b"x"); os.utime(a, (now - 30, now - 30))
+    b = tmp_path / "2.mp4"; b.write_bytes(b"x"); os.utime(b, (now - 20, now - 20))
+    c = tmp_path / "3.m4a"; c.write_bytes(b"x"); os.utime(c, (now - 10, now - 10))
+    (tmp_path / "old.mp4").write_bytes(b"x")
+    os.utime(tmp_path / "old.mp4", (now - 3600, now - 3600))
+    (tmp_path / "part.part").write_bytes(b"x")  # unfinished, ignored
+    got = media_files_since(str(tmp_path), since=now - 60)
+    assert got == [str(a), str(b), str(c)]
 
 
 def test_update_if_stale_threshold(monkeypatch, tmp_path):

@@ -330,13 +330,18 @@ class App(*_AppBase):
                                              values=[o[0] for o in DL_RES_OPTIONS])
         self.dl_res_menu.set(DL_RES_OPTIONS[0][0])
         self.dl_res_menu.pack(side="left", padx=(8, 0))
-        self.dl_audio_check = ctk.CTkCheckBox(dlrow, text="Audio only (MP3)")
-        self.dl_audio_check.pack(side="left", padx=(20, 0))
         ctk.CTkLabel(dlrow, text="Cookies").pack(side="left", padx=(20, 0))
         self.dl_cookies_menu = ctk.CTkOptionMenu(
             dlrow, width=110, values=[o[0] for o in DL_COOKIES_OPTIONS])
         self.dl_cookies_menu.set(DL_COOKIES_OPTIONS[0][0])
         self.dl_cookies_menu.pack(side="left", padx=(8, 0))
+        # Toggles on their own row so nothing clips at the minimum width.
+        dltoggles = ctk.CTkFrame(self.download_frame, fg_color="transparent")
+        dltoggles.grid(row=3, column=0, sticky="w", pady=(8, 0))
+        self.dl_audio_check = ctk.CTkCheckBox(dltoggles, text="Audio only (MP3)")
+        self.dl_audio_check.pack(side="left")
+        self.dl_playlist_check = ctk.CTkCheckBox(dltoggles, text="Whole playlist")
+        self.dl_playlist_check.pack(side="left", padx=(24, 0))
 
         # Audio conversion controls (shown only on the Audio tab)
         self.audio_frame = ctk.CTkFrame(card, fg_color="transparent")
@@ -452,6 +457,9 @@ class App(*_AppBase):
             self.cut_only_check: "Trim without re-encoding: instant and lossless, "
                                  "but cut points snap to keyframes (may start a "
                                  "second or two early).",
+            self.dl_playlist_check: "Download every video the link points to, not "
+                                    "just one. Each video is added to the queue as "
+                                    "it finishes.",
         }
         if self.hw_menu is not None:
             tips[self.hw_menu] = ("GPU is much faster. CPU gives slightly better "
@@ -554,13 +562,17 @@ class App(*_AppBase):
         job.dl_cap = max_height
         audio_only = bool(self.dl_audio_check.get())
         cookies = dict(DL_COOKIES_OPTIONS)[self.dl_cookies_menu.get()]
+        playlist = bool(self.dl_playlist_check.get())
+        if playlist:
+            job.row.name.configure(text="🌐  playlist · " +
+                                   (url if len(url) <= 56 else url[:53] + "…"))
         threading.Thread(target=self._download_worker,
                          args=(job.id, url, self._download_dir(), cancel,
-                               max_height, audio_only, cookies),
+                               max_height, audio_only, cookies, playlist),
                          daemon=True).start()
 
     def _download_worker(self, jid, url, outdir, cancel, max_height, audio_only,
-                         cookies):
+                         cookies, playlist):
         try:
             if not downloader.has_ytdlp():
                 self.msg_queue.put(("dl_setup", "Setting up the downloader (one time)…"))
@@ -570,35 +582,39 @@ class App(*_AppBase):
                 # sites, so refresh it before downloading rather than after
                 # something visibly fails.
                 self.msg_queue.put(("dl_setup", "Updated the downloader."))
-            path, err = downloader.download_with_update_retry(
+            paths, err = downloader.download_with_update_retry(
                 url, outdir,
                 lambda frac: self.msg_queue.put(("dl_progress", jid, frac)),
-                cancel, max_height, audio_only, cookies)
-            self.msg_queue.put(("dl_done", jid, path, err))
+                cancel, max_height, audio_only, cookies, playlist,
+                on_item=lambda i, n: self.msg_queue.put(("dl_item", jid, i, n)))
+            self.msg_queue.put(("dl_done", jid, paths, err))
         except Exception as e:  # noqa: BLE001 - e.g. no internet for the fetch
-            self.msg_queue.put(("dl_done", jid, None, str(e)))
+            self.msg_queue.put(("dl_done", jid, [], str(e)))
 
-    def _on_dl_done(self, jid, path, err):
+    def _on_dl_done(self, jid, paths, err):
         self._dl_cancels.pop(jid, None)
         job = self._job(jid)
         if job is None:  # row was removed while downloading
             return
-        if err == "cancelled":
+        if err == "cancelled" and not paths:
             self._set_status(jid, "cancelled")
             return
-        if path is None:
+        if not paths:
             job.status, job.error = "failed", friendly_error(err)
             job.row.render(selected=(job.id == self.selected_id))
             if job.id == self.selected_id:
                 self._update_details()
             return
-        # Swap the URL job into a normal local-file job and probe it.
-        job.path = path
+        # The first file reuses this URL row; a playlist's remaining files
+        # become their own queue rows.
+        job.path = paths[0]
         job.status = "reading"
         job.progress = 0.0
-        job.row.set_name(path)
+        job.row.set_name(paths[0])
         job.row.render(selected=(job.id == self.selected_id))
         threading.Thread(target=self._probe_worker, args=([job],), daemon=True).start()
+        if len(paths) > 1:
+            self._add_paths(paths[1:])
 
     def _add_paths(self, paths):
         existing = {j.path for j in self.jobs}
@@ -1503,6 +1519,10 @@ class App(*_AppBase):
             if job and job.status == "downloading":
                 job.progress = msg[2]
                 job.row.render(selected=(job.id == self.selected_id))
+        elif kind == "dl_item":
+            job = self._job(msg[1])
+            if job and job.status == "downloading":
+                job.row.name.configure(text=f"🌐  playlist · item {msg[2]} of {msg[3]}")
         elif kind == "dl_done":
             self._on_dl_done(msg[1], msg[2], msg[3])
         elif kind == "update":
