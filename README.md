@@ -15,6 +15,14 @@ double click it. No Python, no ffmpeg, no installer needed.
 > the exe is not code signed. Click **More info · Run anyway**. The app also
 > checks for new versions at startup and shows a link in the header when one
 > is available.
+>
+> **Antivirus:** a VirusTotal scan shows 2 of 68 engines flagging the exe
+> (Bkav and McAfee's generic scanner), with generic, hash named "detections".
+> This is the usual false positive for an unsigned app that unpacks Python and
+> ffmpeg at runtime. Every major engine (Microsoft Defender, Kaspersky,
+> BitDefender, ESET, Sophos) reports it clean. The build is produced in the
+> open by GitHub Actions from the tagged commit, so you can read exactly what
+> goes into it.
 
 ## What it does
 
@@ -43,14 +51,16 @@ accident.
 to MP3 or M4A.
 
 **🌐 Download** · Paste a link from YouTube, Twitter, and most sites. Pick a
-max resolution or grab audio only. Downloads land in your output folder and
-are not re-compressed automatically (sites already compress their videos);
-right click one to queue it. DRM protected content is not supported.
+max resolution or grab audio only, or turn on **Whole playlist** to fetch
+every video a link points to. Downloads land in your output folder and are not
+re-compressed automatically (sites already compress their videos); right click
+one to queue it. DRM protected content is not supported.
 
-**Everywhere:** drag and drop files or folders, mixed batches, live progress
-with speed and time remaining, per file savings, batch totals, a queue that
-remembers your settings, and a bottom bar that stays visible on any screen
-size.
+**Everywhere:** drag and drop files or folders, mixed batches, thumbnail
+previews and live progress with speed and time remaining, per file savings and
+batch totals, one-click **presets** for common jobs, plain-language tooltips,
+clear error messages, queue reordering, and a bottom bar that stays visible on
+any screen size.
 
 ## FAQ
 

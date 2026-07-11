@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.1.0 · 2026-07-11
+- Renamed to **Laxy's Toolbox**, since it now does far more than compress.
+- **Setting presets**: one-click bundles (Discord under 500 MB, Discord under
+  10 MB, top quality archive, smallest file with AV1), plus save your own
+  named presets and reload them any time.
+- **Tooltips** on the settings that a newcomer won't know (codec, quality,
+  speed, audio, resolution, cookies, GPU), in plain language.
+- **Queue thumbnails**: each row shows a small preview frame of the file.
+- **Gentler error messages**: a failed job now explains what went wrong in one
+  plain sentence (disk full, file in use, no internet, private or age
+  restricted video, format not available, and more) instead of a raw log line.
+- **Playlist downloads**: a Whole playlist toggle on the Download tab grabs
+  every video a link points to, adding each to the queue as it finishes.
+- **Queue tidying**: a Clear finished button removes completed rows, and you
+  can reorder the queue with Move up / Move down (or Alt+Up / Alt+Down).
+
 ## v1.0.5 · 2026-07-11
 - Fixed downloads being stuck at 360p on machines without ffmpeg installed:
   yt-dlp needs ffmpeg to merge HD video and audio streams, and it could not
