@@ -1,130 +1,89 @@
 # Laxy's Compressor
 
-A desktop app that compresses videos (H.265 / AV1 / H.264), makes and shrinks
-GIFs, and converts images (WebP / AVIF / JPEG), with metadata-driven
-recommendations, batch queueing, and live progress, all powered by `ffmpeg`.
+A batch media toolbox for Windows: compress videos, make GIFs, convert images
+and audio, and download from links. One portable exe, no install.
 
-## Requirements
-- Python 3.10+
-- `ffmpeg` and `ffprobe` on your PATH (the packaged .exe bundles its own)
+![Laxy's Compressor](docs/screenshot.png)
 
-## Setup (once)
-```powershell
-pip install -r requirements.txt
-```
+## Download
 
-## Run
-```powershell
-python app.py
-```
+Grab `Laxy.Compressor.exe` from the
+[latest release](https://github.com/Laxy-VR/LaxyToolbox/releases/latest) and
+double click it. No Python, no ffmpeg, no installer needed.
 
-## Build a standalone .exe
-```powershell
-pip install pyinstaller
-./build.ps1
-```
-Produces `dist\Laxy Compressor.exe` (a single file you can double click,
-no Python needed). The `.exe` still calls `ffmpeg`/`ffprobe` from your PATH, so
-keep them installed. To run on a machine without ffmpeg, bundle it too (ask and
-I'll wire that in).
+> **First launch:** Windows SmartScreen may warn about an unknown app because
+> the exe is not code signed. Click **More info · Run anyway**. The app also
+> checks for new versions at startup and shows a link in the header when one
+> is available.
 
 ## What it does
-Add one file or a whole folder, pick **one shared setting**, and it works
-through the queue, applying the same policy to every file with per-file and
-overall progress. Dark UI themed to the site's palette (`theme.py`).
 
-## Five tabs
+**🎬 Compress** · Re-encode videos to **H.265** (recommended), **AV1**
+(smallest), or **H.264** (max compatibility), on CPU or NVIDIA GPU. Three
+modes:
+- **Best quality** picks settings from the video's own metadata for the
+  smallest file with no visible quality loss, and predicts the output size.
+- **Target size** fits any video under a limit (500 MB for Discord Nitro,
+  for example) and warns if the result lands over.
+- **Split to fit** cuts a long video into parts that each fit under the limit.
 
-### Compress (video to H.265)
-- **Best quality** · single-pass constant quality. Picks the smallest file with
-  no visible quality loss, tuned to the source.
-- **Trim** · optional start/end seconds to compress just a section. A
-  **Cut only (no re-encode)** checkbox makes the cut instant and lossless
-  instead; cut points snap to keyframes, so they can shift by a second or two.
-- **Remove audio** · an Audio menu option that strips the track (gameplay clips).
-- **Target size** · size-targeted bitrate. Enter a max size (e.g. 500 MB for
-  Discord Nitro) and it computes the bitrate to fit under it, with a live
-  prediction of the resulting quality.
-- **Split to fit** · splits a long video into parts that each fit under the
-  limit, so an hour-long clip becomes several good-looking uploads instead of
-  one soft one. Part count is Auto or chosen.
+Optional **Trim** (start/end seconds) on any mode, a **Cut only** checkbox for
+instant lossless trimming, and a **Remove audio** option for gameplay clips.
+HDR videos keep their 10 bit color on H.265/AV1 and are properly tone mapped
+otherwise.
 
-### GIF
-Export a short clip as an animated GIF (clip start + length, fps, size), using a
-2-in-1 palette pass tuned for moving content, with a choice of dithering. A live
-preview shows the frame at your chosen clip start so you can find the moment
-without leaving the app. `.gif` files can also be imported here to shrink an
-existing GIF, or on the Compress tab to turn one into MP4.
+**🎞 GIF** · Turn a clip into a GIF with a live preview of your chosen start
+frame, tuned palettes, and a dithering choice. Also shrinks existing GIFs.
 
-### Images
-Batch convert PNG / JPEG / BMP / WebP to **WebP** (recommended), **AVIF**
-(smallest), or **JPEG** (max compatibility) at three quality levels, with
-optional resize (2x / 1.5x / 0.5x, or a max-height cap that never upscales).
-A preview shows the selected image. Videos and images can share the queue;
-each tab only processes its own kind.
+**🖼 Images** · Batch convert PNG/JPEG/BMP to **WebP**, **AVIF**, or **JPEG**
+at three quality levels, with optional resizing that never upscales by
+accident.
 
-### Audio
-Extract the audio track from videos, or convert audio files (WAV, FLAC, and
-more), to MP3 or M4A at three quality levels.
+**🎵 Audio** · Extract the soundtrack from any video, or convert audio files,
+to MP3 or M4A.
 
-### Download
-Paste a video link (YouTube, Twitter, and most sites) and it downloads to the
-output folder via yt-dlp, with an optional resolution cap, an Audio only (MP3)
-toggle, and live progress in the queue. Downloaded files are **not** compressed automatically (sites already
-compress their videos); right-click one and choose Queue for compression to
-opt it in. yt-dlp is fetched from its official GitHub release on first use and
-self-updates when a site breaks, so downloads keep working without app
-rebuilds. DRM protected content is not supported.
+**🌐 Download** · Paste a link from YouTube, Twitter, and most sites. Pick a
+max resolution or grab audio only. Downloads land in your output folder and
+are not re-compressed automatically (sites already compress their videos);
+right click one to queue it. DRM protected content is not supported.
 
-## Codecs and encoders
-- **H.265 (default)** · the best balance of compression and playback support.
-- **AV1** · 20 to 30% smaller than H.265; plays on modern devices and browsers.
-- **H.264** · larger files, but plays on everything ever made.
-- **Hardware**: CPU (best quality per byte, real two-pass for target/split) or
-  GPU/NVENC (much faster). The GPU option appears per codec, based on what the
-  machine's card supports. One quality slider maps across all codecs.
+**Everywhere:** drag and drop files or folders, mixed batches, live progress
+with speed and time remaining, per file savings, batch totals, a queue that
+remembers your settings, and a bottom bar that stays visible on any screen
+size.
 
-## Extras
-- **Brand typography bundled**: DM Sans / JetBrains Mono / IBM Plex Mono ship
-  inside the exe and load privately at startup on any machine.
-- **Batch progress in the window title**, visible from the taskbar.
-- **File-type icons** in the queue so mixed batches scan at a glance.
-- **Drag and drop** files or a folder onto the window to queue them.
-- **Live ETA + encode speed** in the status line during a run.
-- **Keeps the PC awake** while encoding, and **flashes the taskbar** when the
-  batch finishes so you can walk away.
-- **Double-click** a finished file to open it; **right-click** a row to
-  open / reveal / remove; shortcuts: Ctrl+O add, Delete remove, Enter start.
-- Per-file size and percent saved shown when each file finishes.
-- Partial output is deleted if a job is cancelled or fails.
-- Last-used settings and window size are remembered between launches; an Open
-  output folder button reveals the results.
+## FAQ
 
-## How it works
-- **probe.py** · runs `ffprobe`, returns a `VideoInfo`, `recommend_settings()`
-  picks defaults from the source, and `has_nvenc()` detects GPU encoding.
-- **encoder.py** · `build_stages()` assembles the ffmpeg command(s) for the
-  chosen encoder/mode (optionally a time segment for splitting);
-  `video_bitrate_for_target()` and `suggest_parts()` do the size math;
-  `run_encode()` runs a command and parses `-progress` for live progress.
-- **app.py** · the CustomTkinter GUI: a scrollable job queue, shared settings,
-  and a background encode thread that reports progress back through a queue.
-- **models.py** · constants, the `Job` dataclass, `human_size`, `status_display`.
-- **widgets.py** · the `QueueRow` list item.
-- **sysutil.py** · Windows helpers (keep-awake, taskbar flash, resource paths).
-- **theme.py** · brand palette, font resolution (falls back to Segoe UI /
-  Consolas when the brand fonts aren't installed), and the CustomTkinter theme
-  override.
+- **A download failed or came out low quality.** The downloader (yt-dlp)
+  updates itself automatically, and the app shows the actual resolution that
+  arrived. If a site keeps serving low quality, it is usually rate limiting
+  your network; retry later. The full log of the last download is in
+  `%LOCALAPPDATA%\LaxyCompressor\last_download.log`.
+- **The GPU option is missing.** The app verifies GPU encoding with a real
+  test encode on first launch. No NVIDIA GPU (or a very old driver) means the
+  option is hidden and everything runs on CPU.
+- **Compressing a downloaded video makes it bigger.** Platform videos are
+  already heavily compressed; the app tells you this in its notes. Compress
+  your own recordings, not re-downloads, for real savings.
 
-## Tests
+## Development
+
+Python 3.10+, [ffmpeg](https://ffmpeg.org) full build on PATH.
+
 ```powershell
+pip install -r requirements.txt
+python app.py          # run from source
 pip install pytest
-pytest -q
+pytest -q              # 89 tests, no ffmpeg or display needed
+pip install pyinstaller
+./build.ps1            # build the standalone exe into dist/
 ```
-Covers the pure logic (recommendation, bitrate math, part counts, command
-construction, helpers). No ffmpeg or display needed.
 
-## Key setting: CRF
-CRF is the quality knob for x265. Lower = better quality and a bigger file;
-higher = smaller file. ~20 is near-transparent, ~28 is visibly compressed.
-The defaults aim for "looks the same, noticeably smaller".
+Architecture, the release process, and hard won gotchas (ffmpeg pinning,
+yt-dlp quirks) are documented in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Version history is in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+MIT (see [LICENSE](LICENSE)). The exe bundles third party software under
+their own licenses, listed in [THIRD_PARTY.md](THIRD_PARTY.md).
