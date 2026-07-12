@@ -102,20 +102,28 @@ class SettingsMixin:
         else the Compress sub-mode."""
         return self._TAB_MODES.get(self.tab_seg.get()) or self.mode_seg.get()
 
-    def _compress_only_widgets(self):
-        """Rows that only make sense for video output (hidden on the GIF tab)."""
+    def _compress_essential_widgets(self):
+        """Always-visible Compress controls (hidden on the other tabs)."""
         widgets = [self.crf_caption, self.crf_value, self.crf_slider, self.crf_hint,
-                   self.preset_menu, self.preset_menu_label,
                    self.audio_menu, self.audio_menu_label,
                    self.codec_menu, self.codec_menu_label,
-                   self.rotate_menu, self.rotate_menu_label,
-                   self.subs_menu, self.subs_menu_label]
+                   self.res_menu, self.res_menu_label]
         if self.hw_menu is not None and self._gpu_ok is not False:
             widgets += [self.hw_menu, self.hw_menu_label]
         return widgets
 
-    def _resfps_widgets(self):
-        return [self.res_menu, self.res_menu_label, self.fps_menu, self.fps_menu_label]
+    def _compress_advanced_widgets(self):
+        """Compress controls tucked behind the Advanced toggle (fps is handled
+        separately: it stays visible on the GIF tab where it matters most)."""
+        return [self.preset_menu, self.preset_menu_label,
+                self.rotate_menu, self.rotate_menu_label,
+                self.subs_menu, self.subs_menu_label]
+
+    def _toggle_advanced(self):
+        self._advanced_open = not self._advanced_open
+        self.advanced_btn.configure(
+            text="Advanced ▴" if self._advanced_open else "Advanced ▾")
+        self._refresh_mode()
 
     def _refresh_mode(self):
         mode = self._mode()
@@ -134,9 +142,12 @@ class SettingsMixin:
                 w.grid() if on else w.grid_remove()
 
         compress = tab == TAB_COMPRESS
+        adv = compress and self._advanced_open
         show([self.mode_seg, self.trim_frame], compress)
-        show(self._compress_only_widgets(), compress)
-        show(self._resfps_widgets(), compress or tab == TAB_GIF)
+        show(self._compress_essential_widgets(), compress)
+        show([self.advanced_btn], compress)
+        show(self._compress_advanced_widgets(), adv)
+        show([self.fps_menu, self.fps_menu_label], adv or tab == TAB_GIF)
         # The empty-field default differs per tab; say so honestly.
         if tab == TAB_DOWNLOAD:
             dl_default = os.path.join(os.path.expanduser("~"), "Downloads")

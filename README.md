@@ -64,11 +64,16 @@ re-compressed automatically (sites already compress their videos); right click
 one to queue it. DRM protected content is not supported.
 
 **Everywhere:** drag and drop files or folders, mixed batches, thumbnail
-previews, a rough **predicted output size on every queued file** before you
-start, live progress with speed and time remaining, per file savings and
-batch totals, one-click **presets** for common jobs, plain-language tooltips,
-clear error messages, queue reordering, a warning before existing files are
-replaced, and a bottom bar that stays visible on any screen size.
+previews, a rough **predicted output size on every queued file** (and the
+batch total) before you start, live progress with speed, time remaining, and
+**real taskbar progress**, per file savings and batch totals, one-click
+**presets** for common jobs, plain-language tooltips, clear error messages
+(hover a failed row to see why), **drag rows to reorder** the queue,
+**two-handle range sliders** for trims and GIF clips with times accepted as
+seconds or mm:ss, an Advanced toggle that keeps the everyday controls up
+front, a warning before existing files are replaced, and a bottom bar that
+stays visible on any screen size. Pick your **accent color** (purple, blue,
+green, teal, rose, or amber) via the gear button.
 
 ## FAQ
 

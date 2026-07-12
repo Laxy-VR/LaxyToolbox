@@ -9,6 +9,7 @@ The App class is assembled from focused mixins (gui_*.py); this module holds
 only the composition, startup, and shutdown.
 """
 
+import json
 import queue
 import sys
 import threading
@@ -30,7 +31,7 @@ from gui_notes import NotesMixin
 from gui_queue import QueueMixin
 from gui_run import RunMixin
 from gui_settings import SettingsMixin
-from models import APP_NAME, GITHUB_REPO, Job  # noqa: F401 - Job hints self.jobs
+from models import APP_NAME, CONFIG_PATH, GITHUB_REPO, Job  # noqa: F401 - Job hints self.jobs
 from sysutil import resource_path, terminate_children
 
 _AppBase = (ctk.CTk, TkinterDnD.DnDWrapper) if _DND_AVAILABLE else (ctk.CTk,)
@@ -158,7 +159,13 @@ if __name__ == "__main__":
         sys.exit(0)
 
     theme.load_brand_fonts(resource_path("fonts"))  # before Tk reads families
-    theme.apply_theme()
+    _accent = "Purple"
+    try:  # the saved accent must be known before any widget takes its colors
+        with open(CONFIG_PATH, encoding="utf-8") as _f:
+            _accent = json.load(_f).get("accent", "Purple")
+    except (OSError, ValueError):
+        pass
+    theme.apply_theme(_accent)
     # A hidden plain-Tk root lets us read installed font families before we
     # build the UI, so the default font family is set for every widget.
     _probe_root = tk.Tk()

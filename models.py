@@ -7,7 +7,7 @@ import theme
 from probe import VideoInfo
 
 APP_NAME = "Laxy's Toolbox"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
@@ -161,6 +161,26 @@ def unique_path(path: str, used: set) -> str:
         n += 1
     used.add(os.path.normcase(os.path.abspath(candidate)))
     return candidate
+
+
+def parse_time(text) -> float | None:
+    """Seconds from '90', '90.5', '1:30', or '1:02:03.5'. None when invalid.
+
+    Every time field accepts both plain seconds and clock style, because
+    players show 1:30 and nobody wants to compute 90 in their head."""
+    s = str(text or "").strip()
+    if not s or "-" in s:
+        return None
+    parts = s.split(":")
+    if len(parts) > 3:
+        return None
+    total = 0.0
+    for part in parts:
+        try:
+            total = total * 60 + float(part or 0)
+        except ValueError:
+            return None
+    return total
 
 
 def human_size(num_bytes) -> str:

@@ -46,7 +46,7 @@ class DownloadsMixin:
         job.from_url = True
         job.row = QueueRow(self.queue_frame, job, self._select_job,
                            self._remove_job, self._open_job, self._context_menu,
-                           self.fonts)
+                           self._on_row_drag, self.fonts)
         job.row.name.configure(text="🌐  " + (url if len(url) <= 66 else url[:63] + "…"))
         job.row.pack(fill="x", padx=6, pady=4)
         job.row.render(selected=False)

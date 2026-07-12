@@ -11,7 +11,7 @@ from encoder import (gif_output_duration, suggest_parts,
 from models import (MODE_TARGET, MODE_SPLIT, MODE_GIF, MODE_IMAGE, MODE_AUDIO,
                     MODE_DOWNLOAD, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS,
                     PARTS_OPTIONS, IMG_FORMAT_OPTIONS, is_image, is_audio,
-                    human_size)
+                    human_size, parse_time)
 from planner import estimate_output_bytes
 from probe import VideoInfo, recommend_settings, estimate_h265_bitrate_kbps
 
@@ -81,15 +81,14 @@ class NotesMixin:
             return
         settings = self._collect_settings()
         settings["cut_only"] = self._cut_only()
-        settings["gif_start"] = self.gif_start.get()
-        settings["gif_len"] = self.gif_len.get()
-        try:
-            ts = float(self.trim_start.get().strip() or 0)
-            te_raw = self.trim_end.get().strip()
-            te = float(te_raw) if te_raw else None
-            settings["trim"] = (ts, te) if (ts > 0 or te is not None) else None
-        except ValueError:
+        settings["gif_start"] = parse_time(self.gif_start.get()) or 0
+        settings["gif_len"] = parse_time(self.gif_len.get()) or 0
+        ts = parse_time(self.trim_start.get()) if self.trim_start.get().strip() else 0.0
+        te = parse_time(self.trim_end.get()) if self.trim_end.get().strip() else None
+        if ts is None:
             settings["trim"] = None
+        else:
+            settings["trim"] = (ts, te) if (ts > 0 or te is not None) else None
         try:
             size_mb = float(self.target_entry.get())
         except ValueError:
@@ -104,6 +103,7 @@ class NotesMixin:
             if est != job.est_size:
                 job.est_size = est
                 job.row.render(selected=(job.id == self.selected_id))
+        self._update_counts()  # keep the batch total in the status bar fresh
 
     def _effective_res_fps(self, info):
         """Resolution/fps after the chosen downscale, for a bpp estimate."""
@@ -182,13 +182,10 @@ class NotesMixin:
 
     def _gif_clip(self, info):
         """Parsed (start, length) for the GIF clip, clamped to the source.
-        Returns None on invalid input."""
-        try:
-            start = float(self.gif_start.get() or 0)
-            length = float(self.gif_len.get() or 0)
-        except ValueError:
-            return None
-        if start < 0 or length <= 0:
+        Accepts seconds or mm:ss. Returns None on invalid input."""
+        start = parse_time(self.gif_start.get()) if self.gif_start.get().strip() else 0.0
+        length = parse_time(self.gif_len.get()) if self.gif_len.get().strip() else 0.0
+        if start is None or length is None or length <= 0:
             return None
         if info.duration > 0:
             start = min(start, max(info.duration - 0.1, 0))
@@ -225,26 +222,58 @@ class NotesMixin:
         return (f"Converts each image to {fmt.split(' ')[0]} · {hints[key]}. "
                 "Quality High is near lossless; Small squeezes hardest.")
 
-    # ---------- GIF scrubber + preview thumbnails ----------
-    def _configure_gif_slider(self, duration):
-        if duration and duration > 0:
-            self._gif_slider_max = max(duration - 0.1, 0.1)
-            self.gif_slider.configure(to=self._gif_slider_max)
+    # ---------- clip/trim range sliders + preview thumbnails ----------
+    @staticmethod
+    def _fill_entry(entry, seconds):
+        entry.delete(0, "end")
+        entry.insert(0, f"{seconds:.1f}")
 
-    def _on_gif_slider(self, value):
-        self.gif_start.delete(0, "end")
-        self.gif_start.insert(0, f"{float(value):.1f}")
+    def _configure_gif_slider(self, duration):
+        """Point both range sliders at the selected file's timeline."""
+        if not duration or duration <= 0:
+            return
+        self._gif_slider_max = max(duration, 0.1)
+        self.gif_range.configure_range(0, self._gif_slider_max)
+        self.trim_range.configure_range(0, self._gif_slider_max)
+        self._sync_gif_range_from_entries()
+        self._sync_trim_range_from_entries()
+
+    def _on_gif_range(self, lo, hi):
+        """Range slider drag: write clip start + length into the entries."""
+        self._fill_entry(self.gif_start, lo)
+        self._fill_entry(self.gif_len, hi - lo)
         self._update_note()
         self._schedule_gif_preview()
+
+    def _sync_gif_range_from_entries(self):
+        start = parse_time(self.gif_start.get()) or 0.0
+        length = parse_time(self.gif_len.get()) or 0.0
+        self.gif_range.set_values(start, start + max(length, 0.01))
 
     def _on_gif_clip_edited(self):
-        try:  # keep the scrubber in step with typed starts (set() fires no command)
-            self.gif_slider.set(min(max(float(self.gif_start.get() or 0), 0),
-                                    self._gif_slider_max))
-        except ValueError:
-            pass
+        self._sync_gif_range_from_entries()  # set_values fires no command
         self._update_note()
         self._schedule_gif_preview()
+
+    def _on_trim_range(self, lo, hi):
+        """Trim slider drag: a full-width range means 'no trim' (clear fields)."""
+        span = self._gif_slider_max
+        if lo <= span * 0.005 and hi >= span * 0.995:
+            self.trim_start.delete(0, "end")
+            self.trim_end.delete(0, "end")
+        else:
+            self._fill_entry(self.trim_start, lo)
+            self._fill_entry(self.trim_end, hi)
+        self._update_note()
+
+    def _sync_trim_range_from_entries(self):
+        start = parse_time(self.trim_start.get()) or 0.0
+        end = parse_time(self.trim_end.get()) if self.trim_end.get().strip() else None
+        self.trim_range.set_values(start, end if end else self._gif_slider_max)
+
+    def _on_trim_edited(self):
+        self._sync_trim_range_from_entries()
+        self._update_note()
 
     def _schedule_gif_preview(self):
         """Debounce preview refreshes while the user is still typing/scrubbing."""

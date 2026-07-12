@@ -4,6 +4,7 @@ Colours come from the website's design tokens. CustomTkinter stores colours as
 [light, dark] pairs; the app is dark-only, so we set both entries the same.
 """
 
+import colorsys
 import os
 import sys
 import tkinter.font as tkfont
@@ -30,19 +31,70 @@ def load_brand_fonts(fonts_dir: str) -> None:
                 pass
 
 # --- Palette (from the site's @theme tokens, plus a few derived shades) ---
-BG = "#1e202c"           # --color-bg      : window background
-SURFACE = "#2a2b3a"      # --color-surface : cards
-SURFACE2 = "#35364a"     # derived         : inputs / hover surface
-BORDER = "#3d3e56"       # derived         : subtle separators
-ACCENT = "#60519b"       # --color-accent  : buttons, highlights
-ACCENT_HOVER = "#6d5eae"  # derived        : lighter accent
-ACCENT_PRESS = "#4e4180"  # derived        : darker accent
-TEXT = "#bfc0d1"         # --color-text    : primary text
-TEXT_MUTED = "#83849b"   # derived         : secondary text
-ON_ACCENT = "#f3f2fb"    # text on accent buttons
-SUCCESS = "#5fb389"
+# The "neutrals" are deliberately not grey: they carry a whisper of the accent
+# hue. They're authored for the purple brand accent below; apply_theme()
+# rotates their hue to follow whichever accent is chosen, keeping lightness
+# and saturation identical, so a green app gets green-tinted darks instead of
+# purple ones peeking through.
+_BASE_NEUTRALS = {
+    "BG": "#1e202c",          # --color-bg      : window background
+    "SURFACE": "#2a2b3a",     # --color-surface : cards
+    "SURFACE2": "#35364a",    # derived         : inputs / hover surface
+    "BORDER": "#3d3e56",      # derived         : subtle separators
+    "TEXT": "#bfc0d1",        # --color-text    : primary text
+    "TEXT_MUTED": "#83849b",  # derived         : secondary text
+    "ON_ACCENT": "#f3f2fb",   # text on accent buttons
+}
+BG = _BASE_NEUTRALS["BG"]
+SURFACE = _BASE_NEUTRALS["SURFACE"]
+SURFACE2 = _BASE_NEUTRALS["SURFACE2"]
+BORDER = _BASE_NEUTRALS["BORDER"]
+TEXT = _BASE_NEUTRALS["TEXT"]
+TEXT_MUTED = _BASE_NEUTRALS["TEXT_MUTED"]
+ON_ACCENT = _BASE_NEUTRALS["ON_ACCENT"]
+SUCCESS = "#5fb389"   # semantic colours stay fixed across accents
 ERROR = "#d76d80"
 WARNING = "#d9a441"
+
+
+def _hex_to_rgb(color: str):
+    color = color.lstrip("#")
+    return tuple(int(color[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def _rotate_hue(color: str, delta: float) -> str:
+    """The same colour with its hue rotated by `delta` (0..1 wraps)."""
+    h, l, s = colorsys.rgb_to_hls(*_hex_to_rgb(color))
+    rgb = colorsys.hls_to_rgb((h + delta) % 1.0, l, s)
+    return "#" + "".join(f"{round(c * 255):02x}" for c in rgb)
+
+
+def _hue(color: str) -> float:
+    return colorsys.rgb_to_hls(*_hex_to_rgb(color))[0]
+
+# Accent choices, selectable in the app's settings (gear button). Each entry
+# carries the button color, its hover/press shades, and the tinted header
+# title / note text derived from it. Purple is the original brand accent.
+ACCENTS = {
+    "Purple": {"accent": "#60519b", "hover": "#6d5eae", "press": "#4e4180",
+               "title": "#a99ce0", "note": "#9a8fd0"},
+    "Blue":   {"accent": "#46699e", "hover": "#5578ad", "press": "#395682",
+               "title": "#9cb8e0", "note": "#8da9d1"},
+    "Green":  {"accent": "#47805c", "hover": "#568f6b", "press": "#3a694c",
+               "title": "#9ccfae", "note": "#8dc0a0"},
+    "Teal":   {"accent": "#3d7f84", "hover": "#4c8e93", "press": "#32686c",
+               "title": "#96c8cc", "note": "#88b9bd"},
+    "Rose":   {"accent": "#9c5470", "hover": "#ab637f", "press": "#80455c",
+               "title": "#dba4b8", "note": "#cc96aa"},
+    "Amber":  {"accent": "#98743d", "hover": "#a7834c", "press": "#7d5f32",
+               "title": "#d9bb8a", "note": "#caac7c"},
+}
+ACCENT_NAME = "Purple"
+ACCENT = ACCENTS["Purple"]["accent"]
+ACCENT_HOVER = ACCENTS["Purple"]["hover"]
+ACCENT_PRESS = ACCENTS["Purple"]["press"]
+TITLE = ACCENTS["Purple"]["title"]
+NOTE = ACCENTS["Purple"]["note"]
 
 # Preferred brand fonts, with fallbacks for machines that don't have them.
 # "DM Sans 14pt" is how GDI names the bundled variable font's default instance.
@@ -57,9 +109,25 @@ def _dual(color: str):
     return [color, color]
 
 
-def apply_theme():
-    """Set appearance + override the built-in theme's colours. Call before
-    creating the root window."""
+def apply_theme(accent: str = "Purple"):
+    """Set appearance + override the built-in theme's colours with the chosen
+    accent. Call before creating the root window."""
+    global ACCENT_NAME, ACCENT, ACCENT_HOVER, ACCENT_PRESS, TITLE, NOTE
+    global BG, SURFACE, SURFACE2, BORDER, TEXT, TEXT_MUTED, ON_ACCENT
+    a = ACCENTS.get(accent) or ACCENTS["Purple"]
+    ACCENT_NAME = accent if accent in ACCENTS else "Purple"
+    ACCENT, ACCENT_HOVER, ACCENT_PRESS = a["accent"], a["hover"], a["press"]
+    TITLE, NOTE = a["title"], a["note"]
+    # Rotate every neutral's hue by the same amount the accent moved from the
+    # brand purple, so the whole canvas follows the accent (Purple: delta 0).
+    delta = _hue(ACCENT) - _hue(ACCENTS["Purple"]["accent"])
+    BG = _rotate_hue(_BASE_NEUTRALS["BG"], delta)
+    SURFACE = _rotate_hue(_BASE_NEUTRALS["SURFACE"], delta)
+    SURFACE2 = _rotate_hue(_BASE_NEUTRALS["SURFACE2"], delta)
+    BORDER = _rotate_hue(_BASE_NEUTRALS["BORDER"], delta)
+    TEXT = _rotate_hue(_BASE_NEUTRALS["TEXT"], delta)
+    TEXT_MUTED = _rotate_hue(_BASE_NEUTRALS["TEXT_MUTED"], delta)
+    ON_ACCENT = _rotate_hue(_BASE_NEUTRALS["ON_ACCENT"], delta)
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")  # gives us a full set of keys
     t = ctk.ThemeManager.theme

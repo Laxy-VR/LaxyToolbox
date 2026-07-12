@@ -64,7 +64,7 @@ class QueueMixin:
             self._next_id += 1
             job.row = QueueRow(self.queue_frame, job, self._select_job,
                                self._remove_job, self._open_job, self._context_menu,
-                               self.fonts)
+                               self._on_row_drag, self.fonts)
             job.row.pack(fill="x", padx=6, pady=4)
             job.row.render(selected=False)
             self.jobs.append(job)
@@ -165,6 +165,27 @@ class QueueMixin:
         job = self._selected_job()
         if job is not None:
             self._move_job(job, delta)
+
+    def _on_row_drag(self, job, y_root):
+        """Drag a row with the mouse: reorder when the pointer crosses the
+        middle of a neighbouring row."""
+        if self.start_btn.cget("state") == "disabled" or len(self.jobs) < 2:
+            return
+        try:
+            i = self.jobs.index(job)
+        except ValueError:
+            return  # row was removed mid-drag
+        for j, other in enumerate(self.jobs):
+            if other is job:
+                continue
+            top = other.row.winfo_rooty()
+            height = other.row.winfo_height()
+            if top <= y_root < top + height:
+                mid = top + height / 2
+                if (j < i and y_root < mid) or (j > i and y_root > mid):
+                    self.jobs.insert(j, self.jobs.pop(i))
+                    self._repack_rows()
+                break
 
     def on_browse_outdir(self):
         folder = filedialog.askdirectory(title="Choose output folder")
@@ -341,5 +362,10 @@ class QueueMixin:
                     if j.info is not None and j.status != "downloaded")
         if not self.jobs:
             self.status.configure(text="Ready.")
-        else:
-            self.status.configure(text=f"{len(self.jobs)} file(s) · {ready} ready to compress.")
+            return
+        text = f"{len(self.jobs)} file(s) · {ready} ready to compress."
+        total_est = sum(j.est_size for j in self.jobs
+                        if j.status == "ready" and j.est_size)
+        if total_est:
+            text += f"  Est. output ~{human_size(total_est)} total."
+        self.status.configure(text=text)

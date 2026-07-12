@@ -15,11 +15,11 @@ from models import (APP_NAME, APP_VERSION, GITHUB_REPO, MODE_QUALITY,
                     MODE_DOWNLOAD, PARTS_OPTIONS, GIF_FORMAT_OPTIONS,
                     GIF_OUT_EXT, IMG_FORMAT_OPTIONS, AUD_FORMAT_OPTIONS,
                     HW_OPTIONS, unique_path, friendly_error, human_size,
-                    is_image, is_audio)
+                    is_image, is_audio, parse_time)
 from planner import plan_job, trimmed_duration
 from probe import nvenc_works, recommend_settings
 from sysutil import (set_keep_awake, flash_taskbar, latest_release,
-                     is_newer_version)
+                     is_newer_version, set_taskbar_progress)
 
 
 class RunMixin:
@@ -63,24 +63,25 @@ class RunMixin:
                 self.status.configure(text="Size must be greater than 0.")
                 return
         if mode == MODE_GIF:
-            try:
-                settings["gif_start"] = float(self.gif_start.get() or 0)
-                settings["gif_len"] = float(self.gif_len.get() or 0)
-            except ValueError:
-                self.status.configure(text="Enter a valid clip start and length in seconds.")
+            gs = parse_time(self.gif_start.get()) if self.gif_start.get().strip() else 0.0
+            gl = parse_time(self.gif_len.get()) if self.gif_len.get().strip() else 0.0
+            if gs is None or gl is None:
+                self.status.configure(
+                    text="Enter a valid clip start and length (seconds or mm:ss).")
                 return
-            if settings["gif_start"] < 0 or settings["gif_len"] <= 0:
+            settings["gif_start"], settings["gif_len"] = gs, gl
+            if settings["gif_len"] <= 0:
                 self.status.configure(text="Clip length must be greater than 0.")
                 return
         settings["trim"] = None
         if mode in (MODE_QUALITY, MODE_TARGET, MODE_SPLIT):
             ts_raw = self.trim_start.get().strip()
             te_raw = self.trim_end.get().strip()
-            try:
-                ts = float(ts_raw) if ts_raw else 0.0
-                te = float(te_raw) if te_raw else None
-            except ValueError:
-                self.status.configure(text="Trim times must be numbers (seconds).")
+            ts = parse_time(ts_raw) if ts_raw else 0.0
+            te = parse_time(te_raw) if te_raw else None
+            if ts is None or (te_raw and te is None):
+                self.status.configure(
+                    text="Trim times must be seconds or mm:ss (e.g. 1:30).")
                 return
             if ts < 0 or (te is not None and te <= ts):
                 self.status.configure(text="Trim end must be after trim start.")
@@ -273,7 +274,8 @@ class RunMixin:
                 job.row.render(selected=(job.id == self.selected_id))
             self.progress.set(overall)
             self.status.configure(text=text)
-            self.title(f"{int(overall * 100)}% · {APP_NAME}")  # taskbar progress
+            self.title(f"{int(overall * 100)}% · {APP_NAME}")
+            set_taskbar_progress(self, overall)  # green fill on the taskbar button
         elif kind == "overall":
             self.progress.set(msg[1])
         elif kind == "job_done":
@@ -337,9 +339,11 @@ class RunMixin:
                 f"“{os.path.basename(job.path)}”. Try the Cookies option on the "
                 "Download tab (sign in to the site in that browser first), or "
                 "retry later."))
+        tuned = False
         if info is not None and not self._prefilled:
             self._apply_recommended(recommend_settings(info))
             self._prefilled = True
+            tuned = True
         if info is not None and self.selected_id is None:
             self._select_job(job)
         elif job.id == self.selected_id:
@@ -348,6 +352,11 @@ class RunMixin:
         else:
             self._refresh_estimates()  # newly ready rows get their estimate
         self._update_counts()
+        if tuned and not job.from_url:  # never over a download quality warning
+            # Quality/preset/audio were just set from this file's metadata;
+            # say so, or the smartest thing the app does stays invisible.
+            self.status.configure(text=(
+                f"Settings auto-tuned for “{os.path.basename(job.path)}”."))
 
     def _on_job_done(self, jid, status, tail):
         job = self._job(jid)
@@ -369,7 +378,8 @@ class RunMixin:
     def _on_all_done(self, cancelled):
         self._set_running(False)
         set_keep_awake(False)
-        self.title(APP_NAME)  # clear the taskbar progress
+        self.title(APP_NAME)
+        set_taskbar_progress(self, None)  # clear the taskbar progress
         done_jobs = [j for j in self.jobs if j.status == "done"]
         done = len(done_jobs)
         failed = sum(1 for j in self.jobs if j.status == "failed")

@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.3.0 · 2026-07-12
+- **Pick your accent color**: the new gear button offers Purple (classic),
+  Blue, Green, Teal, Rose, and Amber. The whole app restyles on restart,
+  including the dark backgrounds, surfaces, borders, and text, which are
+  subtly tinted to follow the chosen accent instead of staying purple.
+- **Two-handle range sliders**: drag start AND end handles to pick the GIF
+  clip or the trim range visually; the text fields stay in sync both ways.
+- **Times accept mm:ss everywhere**: type 1:30 instead of 90 in any trim or
+  clip field (plain seconds still work).
+- **Simpler Compress tab**: speed preset, frame rate, rotate, and subtitles
+  now live behind an Advanced toggle, leaving the essentials up front.
+- **Drag rows to reorder** the queue with the mouse (Alt+Up/Down still works).
+- **Real taskbar progress**: the green fill on the taskbar button now shows
+  batch progress while the app is minimized.
+- Failed rows explain what went wrong when you hover them, instead of only
+  when selected.
+- The status bar shows the estimated total output size of the whole batch,
+  and mentions when settings were auto-tuned from your file.
+
 ## v1.2.1 · 2026-07-12
 - Fixed GIF clips coming out wrong in v1.2.0: the clip length was applied to
   the OUTPUT instead of the input, so boomerang lost its bounce, speed

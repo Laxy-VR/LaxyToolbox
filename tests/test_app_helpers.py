@@ -47,6 +47,59 @@ def test_status_display_ready_shows_estimate():
     assert status_display(j)[0] == "ready · ~5.0 MB"
 
 
+@pytest.mark.parametrize("text,expected", [
+    ("90", 90.0),
+    ("90.5", 90.5),
+    ("1:30", 90.0),
+    ("1:30.5", 90.5),
+    ("1:02:03", 3723.0),
+    ("0:05", 5.0),
+    (" 2:00 ", 120.0),
+    ("", None),
+    (None, None),
+    ("abc", None),
+    ("1:2:3:4", None),
+    ("-5", None),
+    ("1:-5", None),
+])
+def test_parse_time(text, expected):
+    from models import parse_time
+    assert parse_time(text) == expected
+
+
+def test_accent_palettes():
+    import theme
+    assert set(theme.ACCENTS["Purple"]) == {"accent", "hover", "press",
+                                            "title", "note"}
+    for name, colors in theme.ACCENTS.items():
+        for value in colors.values():
+            assert value.startswith("#") and len(value) == 7, (name, value)
+
+
+def test_apply_theme_tints_neutrals_toward_accent():
+    """Regression: a green accent must not leave purple-tinted darks behind.
+    The neutrals follow the accent's hue at unchanged lightness."""
+    import colorsys
+    import theme
+    purple_bg = theme._BASE_NEUTRALS["BG"]
+    try:
+        theme.apply_theme("Green")
+        assert theme.BG != purple_bg  # tint moved away from purple
+        base_hls = colorsys.rgb_to_hls(*theme._hex_to_rgb(purple_bg))
+        green_hls = colorsys.rgb_to_hls(*theme._hex_to_rgb(theme.BG))
+        assert abs(base_hls[1] - green_hls[1]) < 0.01  # same darkness
+        assert abs(base_hls[2] - green_hls[2]) < 0.02  # same saturation
+        # the whole neutral set moves together
+        assert theme.SURFACE != theme._BASE_NEUTRALS["SURFACE"]
+        assert theme.TEXT != theme._BASE_NEUTRALS["TEXT"]
+    finally:
+        theme.apply_theme("Purple")
+    # Purple is the authored base: it must come back bit for bit
+    assert theme.BG == purple_bg
+    assert theme.SURFACE == theme._BASE_NEUTRALS["SURFACE"]
+    assert theme.TEXT_MUTED == theme._BASE_NEUTRALS["TEXT_MUTED"]
+
+
 def test_builtin_presets_reference_valid_labels():
     """A typo in a built-in preset's label would silently no-op; catch it."""
     from models import (BUILTIN_PRESETS, CODEC_OPTIONS, TAB_COMPRESS,

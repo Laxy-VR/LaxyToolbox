@@ -18,7 +18,7 @@ from models import (APP_NAME, APP_VERSION, TAB_COMPRESS, TAB_GIF, TAB_IMAGE,
                     PRESETS, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS)
 from probe import gpu_codecs
 from sysutil import resource_path
-from widgets import Tooltip
+from widgets import Tooltip, RangeSlider
 
 
 class BuildMixin:
@@ -34,12 +34,16 @@ class BuildMixin:
         header.pack(fill="x", padx=20, pady=(18, 6))
         title_row = ctk.CTkFrame(header, fg_color="transparent")
         title_row.pack(fill="x")
-        ctk.CTkLabel(title_row, text=APP_NAME, text_color="#a99ce0",
+        ctk.CTkLabel(title_row, text=APP_NAME, text_color=theme.TITLE,
                      font=self.f("heading", 22, "bold")).pack(side="left")
         self.version_label = ctk.CTkLabel(
             title_row, text=f"v{APP_VERSION}", text_color=theme.TEXT_MUTED,
             font=self.f("mono", 11))
         self.version_label.pack(side="left", padx=(10, 0), pady=(8, 0))
+        ctk.CTkButton(title_row, text="⚙", width=32, height=26,
+                      fg_color="transparent", hover_color=theme.SURFACE2,
+                      text_color=theme.TEXT_MUTED, font=self.f("sans", 15),
+                      command=self._open_app_settings).pack(side="right")
         ctk.CTkLabel(header, text="Batch compression · video, GIF, images, and audio",
                      text_color=theme.TEXT_MUTED, font=self.f("sans", 12)).pack(anchor="w")
 
@@ -170,12 +174,12 @@ class BuildMixin:
         gif_left.grid(row=0, column=0, sticky="nw")
         rows_ = ctk.CTkFrame(gif_left, fg_color="transparent")
         rows_.pack(anchor="w")
-        ctk.CTkLabel(rows_, text="Scrub").pack(side="left")
+        ctk.CTkLabel(rows_, text="Clip").pack(side="left")
         self._gif_slider_max = 60.0
-        self.gif_slider = ctk.CTkSlider(rows_, from_=0, to=60, width=250,
-                                        command=self._on_gif_slider)
-        self.gif_slider.set(0)
-        self.gif_slider.pack(side="left", padx=(10, 0))
+        self.gif_range = RangeSlider(rows_, width=280,
+                                     command=self._on_gif_range)
+        self.gif_range.set_values(0, 5)
+        self.gif_range.pack(side="left", padx=(10, 0))
         row0 = ctk.CTkFrame(gif_left, fg_color="transparent")
         row0.pack(anchor="w", pady=(6, 0))
         ctk.CTkLabel(row0, text="Clip start").pack(side="left")
@@ -183,12 +187,13 @@ class BuildMixin:
         self.gif_start.insert(0, "0")
         self.gif_start.bind("<KeyRelease>", lambda _e: self._on_gif_clip_edited())
         self.gif_start.pack(side="left", padx=(8, 0))
-        ctk.CTkLabel(row0, text="s   length").pack(side="left", padx=(4, 0))
+        ctk.CTkLabel(row0, text="length").pack(side="left", padx=(6, 0))
         self.gif_len = ctk.CTkEntry(row0, width=70)
         self.gif_len.insert(0, "5")
         self.gif_len.bind("<KeyRelease>", lambda _e: self._on_gif_clip_edited())
         self.gif_len.pack(side="left", padx=(8, 0))
-        ctk.CTkLabel(row0, text="s", text_color=theme.TEXT_MUTED).pack(side="left", padx=(4, 0))
+        ctk.CTkLabel(row0, text="s or mm:ss", text_color=theme.TEXT_MUTED).pack(
+            side="left", padx=(6, 0))
         row1 = ctk.CTkFrame(gif_left, fg_color="transparent")
         row1.pack(anchor="w", pady=(8, 0))
         ctk.CTkLabel(row1, text="Dithering").pack(side="left")
@@ -341,43 +346,59 @@ class BuildMixin:
             text_color=theme.TEXT_MUTED, font=self.f("sans", 11))
         self.crf_hint.grid(row=6, column=0, columnspan=4, sticky="w", padx=14, pady=(0, 6))
 
-        self._menu_row(card, 7, 0, "Preset (speed)", PRESETS, "slow", "preset_menu")
-        self._menu_row(card, 7, 2, "Audio", [a[0] for a in AUDIO_OPTIONS],
+        # Essentials row: the settings almost everyone touches.
+        self._menu_row(card, 7, 0, "Audio", [a[0] for a in AUDIO_OPTIONS],
                        AUDIO_OPTIONS[2][0], "audio_menu", self._on_setting_changed)
-        self._menu_row(card, 8, 0, "Resolution", [r[0] for r in RESOLUTIONS],
+        self._menu_row(card, 7, 2, "Resolution", [r[0] for r in RESOLUTIONS],
                        RESOLUTIONS[0][0], "res_menu", self._on_setting_changed)
-        self._menu_row(card, 8, 2, "Frame rate", [f[0] for f in FPS_OPTIONS],
+
+        # Everything below the toggle is hidden until Advanced is opened.
+        self._advanced_open = False
+        self.advanced_btn = ctk.CTkButton(
+            card, text="Advanced ▾", width=110, height=24,
+            fg_color="transparent", hover_color=theme.SURFACE2,
+            text_color=theme.TEXT_MUTED, command=self._toggle_advanced)
+        self.advanced_btn.grid(row=8, column=0, sticky="w", padx=10, pady=(2, 0))
+        self._menu_row(card, 9, 0, "Preset (speed)", PRESETS, "slow", "preset_menu")
+        self._menu_row(card, 9, 2, "Frame rate", [f[0] for f in FPS_OPTIONS],
                        FPS_OPTIONS[0][0], "fps_menu", self._on_setting_changed)
-        self._menu_row(card, 9, 0, "Rotate", [r[0] for r in ROTATE_OPTIONS],
+        self._menu_row(card, 10, 0, "Rotate", [r[0] for r in ROTATE_OPTIONS],
                        ROTATE_OPTIONS[0][0], "rotate_menu", self._on_setting_changed)
         # Burn-in subtitles: none, auto (same-named file), or a picked file.
         self._subs_path = None
-        self._menu_row(card, 9, 2, "Subtitles", [SUBS_NONE, SUBS_AUTO, SUBS_PICK],
+        self._menu_row(card, 10, 2, "Subtitles", [SUBS_NONE, SUBS_AUTO, SUBS_PICK],
                        SUBS_NONE, "subs_menu", self._on_subs_change)
 
         # Optional trim (Compress tab only): encode just start..end seconds
         self.trim_frame = ctk.CTkFrame(card, fg_color="transparent")
-        self.trim_frame.grid(row=10, column=0, columnspan=4, sticky="w",
+        self.trim_frame.grid(row=11, column=0, columnspan=4, sticky="w",
                              padx=14, pady=(2, 0))
-        ctk.CTkLabel(self.trim_frame, text="Trim").pack(side="left")
-        self.trim_start = ctk.CTkEntry(self.trim_frame, width=70,
+        trow = ctk.CTkFrame(self.trim_frame, fg_color="transparent")
+        trow.pack(anchor="w")
+        ctk.CTkLabel(trow, text="Trim").pack(side="left")
+        self.trim_start = ctk.CTkEntry(trow, width=70,
                                        placeholder_text="start")
+        self.trim_start.bind("<KeyRelease>", lambda _e: self._on_trim_edited())
         self.trim_start.pack(side="left", padx=(8, 0))
-        ctk.CTkLabel(self.trim_frame, text="s   to").pack(side="left", padx=(4, 0))
-        self.trim_end = ctk.CTkEntry(self.trim_frame, width=70,
+        ctk.CTkLabel(trow, text="to").pack(side="left", padx=(6, 0))
+        self.trim_end = ctk.CTkEntry(trow, width=70,
                                      placeholder_text="end")
+        self.trim_end.bind("<KeyRelease>", lambda _e: self._on_trim_edited())
         self.trim_end.pack(side="left", padx=(8, 0))
-        ctk.CTkLabel(self.trim_frame, text="s", text_color=theme.TEXT_MUTED).pack(
-            side="left", padx=(4, 0))
+        ctk.CTkLabel(trow, text="s or mm:ss", text_color=theme.TEXT_MUTED).pack(
+            side="left", padx=(6, 0))
         self.cut_only_check = ctk.CTkCheckBox(
-            self.trim_frame, text="Cut only (no re-encode)",
+            trow, text="Cut only (no re-encode)",
             command=self._on_cut_only_toggle)
         self.cut_only_check.pack(side="left", padx=(20, 0))
+        self.trim_range = RangeSlider(self.trim_frame, width=480,
+                                      command=self._on_trim_range)
+        self.trim_range.pack(anchor="w", padx=(42, 0), pady=(4, 0))
 
         self.note_label = ctk.CTkLabel(card, text="", anchor="w", justify="left",
-                                       wraplength=620, text_color="#9a8fd0",
+                                       wraplength=620, text_color=theme.NOTE,
                                        font=self.f("sans", 12))
-        self.note_label.grid(row=11, column=0, columnspan=4, sticky="w",
+        self.note_label.grid(row=12, column=0, columnspan=4, sticky="w",
                              padx=14, pady=(4, 12))
 
         # Output folder

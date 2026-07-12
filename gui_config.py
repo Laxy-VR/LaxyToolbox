@@ -10,6 +10,7 @@ import theme
 from models import (CONFIG_PATH, TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO,
                     TAB_DOWNLOAD, MODE_QUALITY, MODE_TARGET, MODE_SPLIT,
                     BUILTIN_PRESETS, PRESET_PLACEHOLDER)
+from sysutil import relaunch
 
 
 class ConfigMixin:
@@ -61,6 +62,9 @@ class ConfigMixin:
             self.aud_normalize_check.select()
         if cfg.get("img_strip"):
             self.img_strip_check.select()
+        if cfg.get("advanced"):  # reopen the Advanced section if it was open
+            self._advanced_open = True
+            self.advanced_btn.configure(text="Advanced ▴")
         if cfg.get("size"):
             self.target_entry.delete(0, "end")
             self.target_entry.insert(0, str(cfg["size"]))
@@ -106,6 +110,8 @@ class ConfigMixin:
             "dl_resolution": self.dl_res_menu.get(),
             "dl_cookies": self.dl_cookies_menu.get(),
             "dl_audio": bool(self.dl_audio_check.get()),
+            "advanced": self._advanced_open,
+            "accent": theme.ACCENT_NAME,
         }
         if self._gpu_ok is not None:
             cfg["nvenc_ok"] = self._gpu_ok
@@ -278,4 +284,48 @@ class ConfigMixin:
         name_entry.bind("<Return>", save)
         rebuild_list()
         name_entry.focus_set()
+        dlg.grab_set()
+
+    # ---------- app settings (gear button) ----------
+    def _open_app_settings(self):
+        """App-level preferences: pick the accent color. Applying restarts the
+        app, since CustomTkinter widgets take their colors at creation time."""
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("App settings")
+        dlg.geometry("380x300")
+        dlg.transient(self)
+        dlg.configure(fg_color=theme.BG)
+        ctk.CTkLabel(dlg, text="Accent color",
+                     font=self.f("sans", 13, "bold")).pack(padx=16, pady=(16, 2),
+                                                           anchor="w")
+        ctk.CTkLabel(dlg, text="Picking one saves your settings and restarts "
+                               "the app to apply it.",
+                     text_color=theme.TEXT_MUTED, wraplength=330,
+                     font=self.f("sans", 11)).pack(padx=16, pady=(0, 8), anchor="w")
+        grid = ctk.CTkFrame(dlg, fg_color="transparent")
+        grid.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        grid.grid_columnconfigure((0, 1), weight=1)
+
+        def pick(name):
+            if self.start_btn.cget("state") == "disabled":
+                self.status.configure(
+                    text="Finish or cancel the current batch first.")
+                return
+            if name == theme.ACCENT_NAME:
+                dlg.destroy()
+                return
+            theme.ACCENT_NAME = name  # picked up by _save_config
+            self._save_config()
+            dlg.destroy()
+            relaunch()
+            self._on_close()
+
+        for i, (name, colors) in enumerate(theme.ACCENTS.items()):
+            current = " ✓" if name == theme.ACCENT_NAME else ""
+            ctk.CTkButton(grid, text=name + current, height=36,
+                          fg_color=colors["accent"], hover_color=colors["hover"],
+                          text_color=theme.ON_ACCENT,
+                          font=self.f("sans", 13, "bold"),
+                          command=lambda n=name: pick(n)).grid(
+                row=i // 2, column=i % 2, sticky="ew", padx=6, pady=6)
         dlg.grab_set()
