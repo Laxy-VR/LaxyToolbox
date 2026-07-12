@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.1 · 2026-07-12
+- Fixed errors when switching themes ("failed to remove temporary directory",
+  "failed to start embedded python interpreter"): the restarted copy was
+  sharing the old one's unpacked files, which vanished when the old copy
+  closed. Each restart now unpacks its own independent copy.
+
 ## v1.3.0 · 2026-07-12
 - **Pick your accent color**: the new gear button offers Purple (classic),
   Blue, Green, Teal, Rose, and Amber. The whole app restyles on restart,

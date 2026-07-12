@@ -152,13 +152,30 @@ def set_taskbar_progress(window, fraction):
         pass
 
 
+def _relaunch_env() -> dict:
+    """A clean environment for a fresh copy of the app.
+
+    A PyInstaller onefile exe hands its unpack state to child processes via
+    hidden _PYI*/_MEIPASS* variables. If the relaunched copy inherits them it
+    reuses the PARENT's _MEI temp directory, which the exiting parent then
+    deletes from under it: "failed to remove temporary directory" on one side
+    and "failed to start embedded python interpreter" on the other. Strip the
+    state and set PyInstaller's official reset flag so the child unpacks its
+    own independent copy.
+    """
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("_PYI", "_MEIPASS"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
+
+
 def relaunch():
     """Start a fresh copy of the app (how a theme change takes effect)."""
     import subprocess
     if getattr(sys, "frozen", False):  # packaged exe
-        subprocess.Popen([sys.executable])
+        subprocess.Popen([sys.executable], env=_relaunch_env())
     else:
-        subprocess.Popen([sys.executable] + sys.argv)
+        subprocess.Popen([sys.executable] + sys.argv, env=_relaunch_env())
 
 
 def resource_path(name: str) -> str:
