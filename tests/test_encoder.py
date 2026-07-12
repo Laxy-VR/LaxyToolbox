@@ -129,6 +129,18 @@ def test_segment_adds_ss_and_t():
     assert "-ss 2.000" in cmd and "-t 3.000" in cmd
 
 
+def test_segment_trims_input_not_output():
+    """Regression: -t after -i caps the OUTPUT, which breaks timeline
+    stretching filters (boomerang lost its bounce, speed covered the wrong
+    span) and makes palette GIFs read the whole source before writing."""
+    for stages in (build_stages("in.mp4", "out.mp4", _base(), "quality",
+                                segment=(2.0, 3.0)),
+                   build_gif_stages("in.mp4", "out.gif",
+                                    {"target_fps": 15}, segment=(2.0, 3.0))):
+        cmd = stages[0][1]
+        assert cmd.index("-t") < cmd.index("-i")
+
+
 def test_gif_command():
     cmd = joined(build_gif_stages("in.mp4", "out.gif",
                                   {"target_fps": 15, "target_height": 480}))[0]

@@ -122,14 +122,19 @@ def _codec_crf(settings: dict) -> int:
 
 
 def _input_args(input_path: str, segment) -> list[str]:
-    """Base ffmpeg args. `segment` (start, dur) trims one piece for splitting;
-    -ss before -i is a fast seek, -t after -i limits the duration."""
+    """Base ffmpeg args. `segment` (start, dur) trims one piece for splitting.
+
+    Both -ss and -t go BEFORE -i, so they trim the INPUT: the filters only
+    ever see the clip. With -t after -i it becomes an output-duration cap,
+    which breaks every filter that stretches the timeline (speed, reverse,
+    boomerang: the whole source gets processed, then the result is chopped),
+    and it forces palette GIFs to read the entire source before writing
+    anything, which looks like a hang on long videos.
+    """
     args = [FFMPEG, "-y"]
     if segment:
-        args += ["-ss", f"{segment[0]:.3f}"]
+        args += ["-ss", f"{segment[0]:.3f}", "-t", f"{segment[1]:.3f}"]
     args += ["-i", input_path]
-    if segment:
-        args += ["-t", f"{segment[1]:.3f}"]
     return args
 
 
@@ -231,11 +236,13 @@ def build_gif_stages(input_path: str, output_path: str, settings: dict, segment=
     chain = []
     if settings.get("src_hdr"):  # GIF/WebP palettes are SDR; tone map first
         chain.append(TONEMAP)
+    # setpts before fps: after the speed change, fps drops (or duplicates)
+    # frames to the target rate, so 2x really halves the frame count.
+    if speed != 1.0:
+        chain.append(f"setpts=PTS/{speed}")
     chain.append(f"fps={fps}")
     if settings.get("target_height"):
         chain.append(f"scale=-2:{settings['target_height']}:flags=lanczos")
-    if speed != 1.0:
-        chain.append(f"setpts=PTS/{speed}")
     graph = ",".join(chain)
     # reverse buffers the whole (short) clip in memory, so it comes after the
     # fps/scale reductions to keep that buffer small.

@@ -87,17 +87,23 @@ def _run(stages):
 def test_loop_formats_end_to_end(clip, fmt, ext):
     out = os.path.join(os.path.dirname(clip), f"loop_{fmt}{ext}")
     _run(build_gif_stages(clip, out, {"target_fps": 10, "target_height": 120,
-                                      "gif_format": fmt}, segment=(0, 1)))
+                                      "gif_format": fmt}, segment=(0, 0.5)))
     assert os.path.getsize(out) > 0
+    if fmt != "webp":  # ffprobe reads no duration from animated webp
+        assert probe_video(out).duration == pytest.approx(0.5, abs=0.2)
 
 
 def test_boomerang_speed_gif_end_to_end(clip):
+    """Regression: a 1s clip at 2x speed, boomeranged, must come out ~1s
+    (0.5s forward + 0.5s back). The output-side -t bug truncated the bounce
+    away entirely."""
     out = os.path.join(os.path.dirname(clip), "boom.gif")
     _run(build_gif_stages(clip, out, {"target_fps": 10, "target_height": 120,
                                       "gif_format": "gif", "gif_speed": 2.0,
                                       "gif_direction": "boomerang",
                                       "gif_colors": 64}, segment=(0, 1)))
     assert os.path.getsize(out) > 0
+    assert probe_video(out).duration == pytest.approx(1.0, abs=0.25)
 
 
 def test_rotate_and_subtitles_end_to_end(clip):

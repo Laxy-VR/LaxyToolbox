@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.1 · 2026-07-12
+- Fixed GIF clips coming out wrong in v1.2.0: the clip length was applied to
+  the OUTPUT instead of the input, so boomerang lost its bounce, speed
+  covered the wrong part of the video, reverse played the wrong seconds, and
+  a short GIF from a long video sat at 0% while the whole source was read.
+  Clips are now trimmed before any effect runs, which also makes GIF creation
+  from long videos much faster.
+- 2x speed now actually halves the frame count (smaller files), instead of
+  producing a double frame rate GIF.
+
 ## v1.2.0 · 2026-07-12
 - **GIF studio**: the GIF tab can now save loops as classic GIF, **animated
   WebP** (much smaller at better quality), or a silent **MP4 loop** (smallest).
