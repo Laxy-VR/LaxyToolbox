@@ -2,8 +2,8 @@
 
 import pytest
 
-from app import human_size, status_display, Job, App
-from models import unique_path
+from app import App
+from models import human_size, status_display, Job, unique_path
 from probe import VideoInfo
 
 
@@ -40,6 +40,11 @@ def test_status_display_basic():
     assert status_display(_job("ready"))[0] == "ready"
     assert status_display(_job("failed"))[0] == "failed"
     assert status_display(_job("encoding", progress=0.42))[0] == "encoding 42%"
+
+
+def test_status_display_ready_shows_estimate():
+    j = _job("ready", est_size=5 * 1024 * 1024)
+    assert status_display(j)[0] == "ready · ~5.0 MB"
 
 
 def test_builtin_presets_reference_valid_labels():

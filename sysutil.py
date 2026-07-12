@@ -1,7 +1,46 @@
-"""Windows platform helpers: keep-awake, taskbar flash, bundled resource paths."""
+"""Windows platform helpers: keep-awake, taskbar flash, bundled resource paths,
+and a registry of child processes so closing the app never orphans an ffmpeg."""
 
 import os
 import sys
+import threading
+
+# Long-running children (ffmpeg encodes, yt-dlp downloads) register here so
+# the app can kill them on exit. Daemon threads die with the process, but
+# their subprocesses would otherwise keep running headless at full CPU.
+_children = set()
+_children_lock = threading.Lock()
+
+
+def track_child(proc):
+    with _children_lock:
+        _children.add(proc)
+
+
+def untrack_child(proc):
+    with _children_lock:
+        _children.discard(proc)
+
+
+def terminate_children(timeout: float = 3.0) -> None:
+    """Terminate every registered child process and wait briefly for each.
+
+    Called on window close; the short wait releases file locks so partial
+    output files can be deleted before the process exits.
+    """
+    with _children_lock:
+        procs = list(_children)
+    for proc in procs:
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+        except OSError:
+            pass
+    for proc in procs:
+        try:
+            proc.wait(timeout=timeout)
+        except Exception:  # noqa: BLE001 - exit must never hang on a zombie
+            pass
 
 
 def set_keep_awake(on: bool):

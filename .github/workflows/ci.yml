@@ -6,6 +6,16 @@ on:
   release:
     types: [published]
 
+# The ffmpeg the app ships with, and the one the smoke tests run against.
+# The FULL build, not essentials: essentials lacks libsvtav1, which the app
+# needs for CPU AV1 encoding. Pinned to 7.1.1: the version the app was tested
+# against, and ffmpeg 8.x NVENC requires NVIDIA driver 610+, which would
+# silently break GPU encoding for most users. Bump deliberately, re-test NVENC
+# on real hardware, and update the SHA256 when you do.
+env:
+  FFMPEG_URL: https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build.zip
+  FFMPEG_SHA256: D760E1B3574402ED18B4865851F87D87E73965A982E6453212DF8621FED1C508
+
 jobs:
   test:
     runs-on: windows-latest
@@ -15,6 +25,17 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt pytest
+      - name: Fetch pinned ffmpeg (for the smoke tests)
+        shell: pwsh
+        run: |
+          curl.exe -sL -o ffmpeg.zip $env:FFMPEG_URL
+          $actual = (Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash
+          if ($actual -ne $env:FFMPEG_SHA256) {
+            throw "ffmpeg checksum mismatch: expected $env:FFMPEG_SHA256, got $actual"
+          }
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
+          $bin = (Get-ChildItem ffmpeg_tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          Add-Content $env:GITHUB_PATH $bin
       - run: pytest -q
 
   build:
@@ -30,15 +51,16 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt pyinstaller
-      - name: Fetch ffmpeg (bundled into the exe)
+      - name: Fetch pinned ffmpeg (bundled into the exe)
         shell: pwsh
         run: |
-          # The FULL build, not essentials: essentials lacks libsvtav1, which
-          # the app needs for CPU AV1 encoding. Pinned to 7.1.1: the version
-          # the app was tested against, and ffmpeg 8.x NVENC requires NVIDIA
-          # driver 610+, which would silently break GPU encoding for most
-          # users. Bump deliberately, and re-test NVENC when you do.
-          curl.exe -sL -o ffmpeg.zip https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build.zip
+          # This artifact ships inside the exe, so its integrity is verified
+          # against the pinned hash before anything is bundled.
+          curl.exe -sL -o ffmpeg.zip $env:FFMPEG_URL
+          $actual = (Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash
+          if ($actual -ne $env:FFMPEG_SHA256) {
+            throw "ffmpeg checksum mismatch: expected $env:FFMPEG_SHA256, got $actual"
+          }
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
           $bin = (Get-ChildItem ffmpeg_tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
           Add-Content $env:GITHUB_PATH $bin

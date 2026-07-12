@@ -1,2 +1,3 @@
 customtkinter==5.2.2
-tkinterdnd2
+tkinterdnd2==0.6.2
+pillow==11.3.0

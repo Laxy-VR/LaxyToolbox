@@ -6,22 +6,47 @@ import subprocess
 from collections import deque
 
 from probe import NO_WINDOW, FFMPEG
+from sysutil import track_child, untrack_child
+
+
+def _escape_chars(s: str, chars: str) -> str:
+    return "".join(("\\" + c) if c in chars else c for c in s)
+
+
+def _subtitles_filter(path: str) -> str:
+    """The subtitles burn-in filter with the path escaped for a filtergraph.
+
+    ffmpeg parses the string twice (the graph, then the filter's own options),
+    so special characters need TWO levels of backslash escaping; a drive colon
+    ends up as C\\\\\\:. This is the scheme from ffmpeg's own filtergraph
+    escaping docs; quoting instead breaks on the second parse.
+    """
+    p = os.path.abspath(path).replace("\\", "/")
+    p = _escape_chars(p, "\\':")       # level 2: the filter's option value
+    p = _escape_chars(p, "\\',;[]")    # level 1: the filtergraph string
+    return f"subtitles=filename={p}"
 
 
 def _video_filters(settings: dict) -> str:
-    """Build the -vf filter chain from optional downscale / fps changes.
+    """Build the -vf filter chain from optional rotate / downscale / fps /
+    subtitle changes.
 
     scale=-2:H keeps the aspect ratio and forces an even width (H.265 needs
     even dimensions). fps=N drops the frame rate, which gives the encoder far
-    more bits per frame at a fixed target size.
+    more bits per frame at a fixed target size. Subtitles render last so they
+    stay crisp at the final output resolution.
     """
     parts = []
     if _needs_tonemap(settings):
         parts.append(TONEMAP)
+    if settings.get("rotate"):
+        parts.append(settings["rotate"])
     if settings.get("target_height"):
         parts.append(f"scale=-2:{settings['target_height']}")
     if settings.get("target_fps"):
         parts.append(f"fps={settings['target_fps']}")
+    if settings.get("subtitles"):
+        parts.append(_subtitles_filter(settings["subtitles"]))
     return ",".join(parts)
 
 
@@ -179,28 +204,66 @@ def build_stages(input_path: str, output_path: str, settings: dict, mode: str,
     return [("encode", cmd)]
 
 
-def build_gif_stages(input_path: str, output_path: str, settings: dict, segment=None):
-    """One-pass palette GIF: build an optimal 256-colour palette and apply it in
-    the same ffmpeg run via split / palettegen / paletteuse. `segment` trims a
-    short clip, which is what you almost always want for a GIF.
+def gif_output_duration(length: float, settings: dict) -> float:
+    """Seconds of animation a clip of `length`s produces after the speed and
+    direction options (boomerang plays forward then reversed, so it doubles)."""
+    speed = float(settings.get("gif_speed") or 1.0)
+    out = length / speed if speed > 0 else length
+    if settings.get("gif_direction") == "boomerang":
+        out *= 2
+    return out
 
-    stats_mode=diff biases the palette toward moving areas and diff_mode
-    re-encodes only changed rectangles, which improves colours and shrinks the
-    file on typical clips.
+
+def build_gif_stages(input_path: str, output_path: str, settings: dict, segment=None):
+    """One command turning a clip into a loop: classic GIF (via a one-pass
+    palette: split / palettegen / paletteuse), animated WebP (much smaller),
+    or a silent MP4 (smallest). `segment` trims a short clip, which is what
+    you almost always want.
+
+    For GIF, stats_mode=diff biases the palette toward moving areas and
+    diff_mode re-encodes only changed rectangles, which improves colours and
+    shrinks the file on typical clips.
     """
-    fps = settings.get("target_fps") or 15  # GIFs want a low frame rate
-    dither = settings.get("gif_dither", "bayer:bayer_scale=5")
+    fmt = settings.get("gif_format", "gif")
+    fps = settings.get("target_fps") or 15  # loops want a low frame rate
+    speed = float(settings.get("gif_speed") or 1.0)
+    direction = settings.get("gif_direction", "forward")
     chain = []
-    if settings.get("src_hdr"):  # GIF palettes are SDR; tone map HDR first
+    if settings.get("src_hdr"):  # GIF/WebP palettes are SDR; tone map first
         chain.append(TONEMAP)
     chain.append(f"fps={fps}")
     if settings.get("target_height"):
         chain.append(f"scale=-2:{settings['target_height']}:flags=lanczos")
-    filtergraph = (",".join(chain) +
-                   ",split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=diff[p];"
-                   f"[s1][p]paletteuse=dither={dither}:diff_mode=rectangle")
+    if speed != 1.0:
+        chain.append(f"setpts=PTS/{speed}")
+    graph = ",".join(chain)
+    # reverse buffers the whole (short) clip in memory, so it comes after the
+    # fps/scale reductions to keep that buffer small.
+    if direction == "reverse":
+        graph += ",reverse"
+    elif direction == "boomerang":
+        graph += ",split[f][b];[b]reverse[r];[f][r]concat=n=2:v=1"
+
+    if fmt == "webp":
+        cmd = _input_args(input_path, segment) + \
+            ["-filter_complex", graph, "-c:v", "libwebp", "-quality", "75",
+             "-compression_level", "6", "-loop", "0", "-an", "-pix_fmt",
+             "yuva420p"] + PROGRESS + [output_path]
+        return [("webp", cmd)]
+    if fmt == "mp4":
+        cmd = _input_args(input_path, segment) + \
+            ["-filter_complex", graph, "-c:v", "libx264", "-preset", "veryfast",
+             "-crf", "23", "-pix_fmt", "yuv420p", "-an",
+             "-movflags", "+faststart"] + PROGRESS + [output_path]
+        return [("mp4", cmd)]
+
+    dither = settings.get("gif_dither", "bayer:bayer_scale=5")
+    colors = int(settings.get("gif_colors") or 256)
+    graph += (f",split[s0][s1];[s0]palettegen=max_colors={colors}"
+              ":stats_mode=diff[p];"
+              f"[s1][p]paletteuse=dither={dither}:diff_mode=rectangle")
     cmd = _input_args(input_path, segment) + \
-        ["-filter_complex", filtergraph, "-loop", "0"] + PROGRESS + [output_path]
+        ["-filter_complex", graph, "-loop", "0"] + PROGRESS + [output_path]
     return [("gif", cmd)]
 
 
@@ -222,8 +285,13 @@ def build_audio_stages(input_path: str, output_path: str, settings: dict):
     """One command extracting/converting the audio track to MP3 or M4A."""
     enc, _ = AUD_ENCODERS[settings.get("aud_format", "mp3")]
     bitrate = settings.get("aud_bitrate", "192k")
-    cmd = [FFMPEG, "-y", "-i", input_path, "-vn", "-c:a", enc,
-           "-b:a", str(bitrate)] + PROGRESS + [output_path]
+    filt = []
+    if settings.get("aud_normalize"):
+        # EBU R128 loudness normalisation; loudnorm resamples to 192 kHz
+        # internally, so pin a sane output rate.
+        filt = ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000"]
+    cmd = [FFMPEG, "-y", "-i", input_path, "-vn"] + filt + \
+        ["-c:a", enc, "-b:a", str(bitrate)] + PROGRESS + [output_path]
     return [("audio", cmd)]
 
 
@@ -267,8 +335,9 @@ def build_image_stages(input_path: str, output_path: str, settings: dict):
         "jpeg": ["-c:v", "mjpeg", "-q:v", str(q), "-pix_fmt", "yuvj420p"],
     }[fmt]
     vf = _image_vf(settings)
+    strip = ["-map_metadata", "-1"] if settings.get("img_strip") else []
     cmd = [FFMPEG, "-y", "-i", input_path] + (["-vf", vf] if vf else []) \
-        + vargs + ["-frames:v", "1"] + PROGRESS + [output_path]
+        + vargs + strip + ["-frames:v", "1"] + PROGRESS + [output_path]
     return [("image", cmd)]
 
 
@@ -317,33 +386,41 @@ def run_encode(cmd, duration, on_progress, cancel_event):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,  # merge log into one stream to avoid deadlock
         text=True,
+        # ffmpeg echoes file names into its log; the default locale codec
+        # (cp1252) can't decode many UTF-8 bytes and would fail the encode.
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
         creationflags=NO_WINDOW,
     )
+    track_child(proc)
 
     tail = deque(maxlen=25)  # keep the last lines around for error messages
     speed = None
-    for line in proc.stdout:
-        if cancel_event.is_set():
-            proc.terminate()
-            proc.wait()
-            return None, list(tail)
+    try:
+        for line in proc.stdout:
+            if cancel_event.is_set():
+                proc.terminate()
+                proc.wait()
+                return None, list(tail)
 
-        line = line.strip()
-        if line:
-            tail.append(line)
+            line = line.strip()
+            if line:
+                tail.append(line)
 
-        if line.startswith("speed="):
-            raw = line.split("=", 1)[1].strip().rstrip("x")
-            try:
-                speed = float(raw)
-            except ValueError:
-                speed = None
-        elif line.startswith("out_time=") and duration > 0:
-            seconds = _time_to_seconds(line.split("=", 1)[1])
-            on_progress(min(seconds / duration, 1.0), speed)
-        elif line == "progress=end":
-            on_progress(1.0, speed)
+            if line.startswith("speed="):
+                raw = line.split("=", 1)[1].strip().rstrip("x")
+                try:
+                    speed = float(raw)
+                except ValueError:
+                    speed = None
+            elif line.startswith("out_time=") and duration > 0:
+                seconds = _time_to_seconds(line.split("=", 1)[1])
+                on_progress(min(seconds / duration, 1.0), speed)
+            elif line == "progress=end":
+                on_progress(1.0, speed)
 
-    proc.wait()
-    return proc.returncode, list(tail)
+        proc.wait()
+        return proc.returncode, list(tail)
+    finally:
+        untrack_child(proc)

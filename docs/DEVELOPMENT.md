@@ -8,14 +8,31 @@ workflow.
 
 | Module | Responsibility |
 |---|---|
-| `app.py` | The CustomTkinter GUI: the `App` class, tabs, queue, settings, and the background workers. |
+| `app.py` | Composes the `App` class from the `gui_*` mixins; holds only `__init__`, shutdown, and the entry point. |
+| `gui_build.py` | Constructs every widget: header, toolbar, queue area, the settings card for all tabs, tooltips, short-screen fallback. |
+| `gui_queue.py` | The file queue: add/drop/remove/reorder, selection, the details line, probing, opening results in Explorer. |
+| `gui_downloads.py` | The Download tab: clipboard prefill, starting yt-dlp jobs, turning finished downloads into rows. |
+| `gui_notes.py` | The advisory layer: per-mode notes, per-row output size estimates, GIF/image preview thumbnails and the scrubber. |
+| `gui_settings.py` | Settings state: which controls each tab/mode shows, greying rules, and snapshotting widgets into a settings dict. |
+| `gui_run.py` | Running a batch: validation, output planning, the encode worker, progress, the message pump, GPU/update probes. |
+| `gui_config.py` | Persistence: the config file and named setting presets. |
 | `models.py` | Constants (tabs, modes, dropdown options), the `Job` dataclass, small pure helpers (`status_display`, `unique_path`, `kind_icon`). |
 | `encoder.py` | Builds and runs every ffmpeg command: `build_stages` (video, all codecs and modes), `build_gif_stages`, `build_image_stages`, `build_audio_stages`, `build_cut_stages`, plus the size math (`video_bitrate_for_target`, `suggest_parts`). |
+| `planner.py` | Pure planning: `plan_job` turns one queued job + mode + settings snapshot into `(label, command, duration)` stages and 2 pass log paths. No widgets or threads, fully unit tested. |
 | `probe.py` | Reads metadata via ffprobe (`probe_video` → `VideoInfo`), recommends settings, resolves the bundled ffmpeg/ffprobe paths, detects GPU encoders (`gpu_codecs`, `nvenc_works`), extracts preview frames. |
 | `downloader.py` | yt-dlp integration: fetch and self update the binary, build the download command, parse progress, locate the finished file. |
 | `widgets.py` | `QueueRow`, the per file list item. |
-| `sysutil.py` | Windows helpers: keep awake, taskbar flash, bundled resource paths, GitHub release lookup for the update check. |
+| `sysutil.py` | Windows helpers: keep awake, taskbar flash, bundled resource paths, GitHub release lookup for the update check, and the child process registry (`track_child` / `terminate_children`) that stops window close from orphaning ffmpeg or yt-dlp. |
 | `theme.py` | Brand palette, private font loading, CustomTkinter theme override. |
+
+### The mixin split
+
+`App` is one class assembled from seven mixins, one per concern. Every method
+still lives on the same object (`self.crf_slider` works from any file), so
+there is no plumbing between modules; the split is purely for navigability.
+When adding a method, put it in the mixin whose docstring matches; if none
+fits, that's a hint it belongs in a pure module (`planner.py`, `encoder.py`)
+instead.
 
 ### Threading model
 
@@ -71,10 +88,18 @@ ingredients.
 ### ffmpeg pinning
 - CI must bundle gyan's **full** build, not essentials: essentials lacks
   `libsvtav1`, silently breaking CPU AV1 encoding (v1.0 shipped this bug).
+  `tests/test_ffmpeg_smoke.py` now fails loudly if the wrong build sneaks in.
 - The pin is **7.1.1** deliberately: ffmpeg 8.x NVENC requires NVIDIA driver
   610+, which would silently break GPU encoding for most users (v1.0.1
   shipped this bug). When bumping the pin, run the encode matrix and a real
   NVENC encode on actual hardware first.
+- The download is verified against a pinned SHA256 in `ci.yml` (both the test
+  and build jobs). When bumping the pin, compute the new hash with
+  `Get-FileHash` and update `FFMPEG_SHA256` alongside `FFMPEG_URL`.
+- Subprocess text streams that can echo file names (`run_encode`,
+  `probe_video`, yt-dlp) must pass `encoding="utf-8", errors="replace"`:
+  the Windows locale codec (cp1252) raises on many UTF-8 bytes and would
+  fail an otherwise healthy encode of a non ASCII file name.
 - Local builds bundle whatever `Get-Command ffmpeg` finds. A polluted global
   Python also bloats local exes (PyInstaller bundles importable extras like
   numpy); the CI exe from a clean environment is the canonical artifact.
@@ -103,6 +128,15 @@ ingredients.
 - HDR (PQ/HLG) squeezed to 8 bit SDR without tone mapping looks washed out;
   `encoder.TONEMAP` (a zscale + hable chain) handles H.264 and GIF outputs
   from HDR sources.
+
+### Subtitles burn-in
+- The `subtitles=` filter's filename goes through **two** rounds of ffmpeg
+  string parsing (the filtergraph, then the filter's options), so it needs two
+  levels of backslash escaping and no quoting: `C:\x.srt` becomes
+  `C\\:/x.srt` (`encoder._subtitles_filter`). Single quoting looks right and
+  passes a naive test, but breaks on the second parse; the smoke test
+  (`test_rotate_and_subtitles_end_to_end`) burns a real subtitle from a path
+  with an apostrophe to keep this honest.
 
 ### Misc
 - One quality slider maps across codec scales via `CODECS[...]["crf_off"]`

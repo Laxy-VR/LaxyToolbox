@@ -149,6 +149,100 @@ def test_gif_default_fps_when_keep_original():
     assert "fps=15" in cmd  # falls back to 15 for GIFs
 
 
+def test_gif_webp_output():
+    cmd = joined(build_gif_stages("in.mp4", "out.webp",
+                                  {"target_fps": 15, "gif_format": "webp"}))[0]
+    assert "libwebp" in cmd and "-loop 0" in cmd and "-an" in cmd
+    assert "palettegen" not in cmd  # WebP needs no GIF palette
+
+
+def test_gif_mp4_loop_output():
+    cmd = joined(build_gif_stages("in.mp4", "out_loop.mp4",
+                                  {"target_fps": 15, "gif_format": "mp4"}))[0]
+    assert "libx264" in cmd and "-an" in cmd and "faststart" in cmd
+    assert "palettegen" not in cmd
+
+
+def test_gif_speed_uses_setpts():
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_speed": 2.0}))[0]
+    assert "setpts=PTS/2.0" in cmd
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_speed": 1.0}))[0]
+    assert "setpts" not in cmd  # 1x adds no filter
+
+
+def test_gif_direction_reverse_and_boomerang():
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_direction": "reverse"}))[0]
+    assert ",reverse" in cmd and "concat" not in cmd
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_direction": "boomerang"}))[0]
+    assert "concat=n=2" in cmd and "reverse[r]" in cmd
+    # the boomerang graph must still feed the palette stages for classic GIF
+    assert cmd.index("concat=n=2") < cmd.index("palettegen")
+
+
+def test_gif_palette_colors():
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_colors": 128}))[0]
+    assert "max_colors=128" in cmd
+
+
+def test_gif_output_duration():
+    from encoder import gif_output_duration
+    assert gif_output_duration(5.0, {}) == 5.0
+    assert gif_output_duration(5.0, {"gif_speed": 2.0}) == 2.5
+    assert gif_output_duration(5.0, {"gif_speed": 0.5}) == 10.0
+    assert gif_output_duration(5.0, {"gif_speed": 2.0,
+                                     "gif_direction": "boomerang"}) == 5.0
+
+
+def test_rotate_filter_before_scale():
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(rotate="transpose=1", target_height=1080),
+                              "quality"))[0]
+    assert "transpose=1,scale=-2:1080" in cmd
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(rotate="hflip,vflip"),
+                              "quality"))[0]
+    assert "hflip,vflip" in cmd
+
+
+def test_subtitles_filter_escaping():
+    """Two-level backslash escaping per ffmpeg's filtergraph docs; validated
+    against a real ffmpeg by the smoke test."""
+    from encoder import _subtitles_filter
+    f = _subtitles_filter(r"C:\subs\my clip's.srt")
+    assert f == r"subtitles=filename=C\\:/subs/my clip\\\'s.srt"
+
+
+def test_subtitles_render_last_in_chain():
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(subtitles="s.srt", target_height=720),
+                              "quality"))[0]
+    assert "subtitles=filename=" in cmd
+    assert cmd.index("scale=-2:720") < cmd.index("subtitles=")
+
+
+def test_audio_normalize_option():
+    cmd = joined(build_audio_stages("in.mp4", "out.mp3",
+                                    {"aud_format": "mp3", "aud_bitrate": "192k",
+                                     "aud_normalize": True}))[0]
+    assert "loudnorm" in cmd and "-ar 48000" in cmd
+    cmd = joined(build_audio_stages("in.mp4", "out.mp3",
+                                    {"aud_format": "mp3", "aud_bitrate": "192k"}))[0]
+    assert "loudnorm" not in cmd
+
+
+def test_image_strip_metadata_option():
+    base = {"img_format": "webp", "img_quality": "balanced", "img_resize": None}
+    cmd = joined(build_image_stages("in.jpg", "out.webp",
+                                    dict(base, img_strip=True)))[0]
+    assert "-map_metadata -1" in cmd
+    cmd = joined(build_image_stages("in.jpg", "out.webp", base))[0]
+    assert "-map_metadata" not in cmd
+
+
 def test_remove_audio_option():
     cmd = joined(build_stages("in.mp4", "out.mp4",
                               _base(audio_mode="none"), "quality"))[0]

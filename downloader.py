@@ -14,6 +14,7 @@ import urllib.request
 from collections import deque
 
 from probe import NO_WINDOW, FFMPEG
+from sysutil import track_child, untrack_child
 
 YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 APPDATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA")
@@ -184,6 +185,7 @@ def download(url: str, outdir: str, on_progress, cancel_event, max_height=None,
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="utf-8", errors="replace",
                             bufsize=1, creationflags=NO_WINDOW)
+    track_child(proc)
     filepaths = []
     seen = set()
 
@@ -195,25 +197,28 @@ def download(url: str, outdir: str, on_progress, cancel_event, max_height=None,
 
     tail = deque(maxlen=15)
     log_lines = [f"$ {' '.join(cmd)}"]
-    for line in proc.stdout:
-        if cancel_event.is_set():
-            proc.terminate()
-            proc.wait()
-            return filepaths, "cancelled"
-        line = line.strip()
-        if not line:
-            continue
-        tail.append(line)
-        log_lines.append(line)
-        item = parse_item(line)
-        if item and on_item:
-            on_item(*item)
-        frac = parse_progress(line)
-        if frac is not None:
-            on_progress(frac)
-        elif not line.startswith("[") and os.path.exists(line):
-            remember(line)  # the printed after_move:filepath
-    proc.wait()
+    try:
+        for line in proc.stdout:
+            if cancel_event.is_set():
+                proc.terminate()
+                proc.wait()
+                return filepaths, "cancelled"
+            line = line.strip()
+            if not line:
+                continue
+            tail.append(line)
+            log_lines.append(line)
+            item = parse_item(line)
+            if item and on_item:
+                on_item(*item)
+            frac = parse_progress(line)
+            if frac is not None:
+                on_progress(frac)
+            elif not line.startswith("[") and os.path.exists(line):
+                remember(line)  # the printed after_move:filepath
+        proc.wait()
+    finally:
+        untrack_child(proc)
     try:  # full output of the most recent download, for diagnosing bad results
         with open(DL_LOG_PATH, "w", encoding="utf-8") as f:
             f.write("\n".join(log_lines) + f"\nexit code: {proc.returncode}\n")

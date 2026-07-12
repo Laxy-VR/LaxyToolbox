@@ -7,7 +7,7 @@ import theme
 from probe import VideoInfo
 
 APP_NAME = "Laxy's Toolbox"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
@@ -66,6 +66,33 @@ PARTS_OPTIONS = [("Auto", None), ("2", 2), ("3", 3), ("4", 4), ("6", 6), ("8", 8
 GIF_DITHER_OPTIONS = [("Bayer (clean)", "bayer:bayer_scale=5"),
                       ("Floyd-Steinberg (smooth)", "floyd_steinberg"),
                       ("None (flat colors)", "none")]
+# Animated WebP is typically far smaller than GIF at better quality; an MP4
+# loop is smaller still. GIF stays the default for maximum compatibility.
+GIF_FORMAT_OPTIONS = [("GIF (classic)", "gif"),
+                      ("WebP (much smaller)", "webp"),
+                      ("MP4 loop (smallest)", "mp4")]
+GIF_SPEED_OPTIONS = [("0.25x", 0.25), ("0.5x", 0.5), ("1x", 1.0),
+                     ("1.5x", 1.5), ("2x", 2.0), ("4x", 4.0)]
+GIF_DIRECTION_OPTIONS = [("Forward", "forward"), ("Reverse", "reverse"),
+                         ("Boomerang", "boomerang")]
+# Fewer palette colors shrink a GIF a lot on simple footage (gif only).
+GIF_COLORS_OPTIONS = [("256 colors", 256), ("128 colors", 128),
+                      ("64 colors", 64)]
+GIF_OUT_EXT = {"gif": ".gif", "webp": ".webp", "mp4": "_loop.mp4"}
+
+# Rotation/flip for phone videos recorded sideways. Values are ffmpeg filters.
+ROTATE_OPTIONS = [("No rotation", None),
+                  ("Rotate 90° right", "transpose=1"),
+                  ("Rotate 90° left", "transpose=2"),
+                  ("Rotate 180°", "hflip,vflip"),
+                  ("Flip horizontal", "hflip"),
+                  ("Flip vertical", "vflip")]
+
+# Burn-in subtitles: auto finds a same-named .srt/.ass/.vtt next to each video.
+SUBS_NONE = "No subtitles"
+SUBS_AUTO = "Auto (matching .srt)"
+SUBS_PICK = "Choose file…"
+SUB_EXTS = (".srt", ".ass", ".vtt")
 
 IMG_FORMAT_OPTIONS = [("WebP (recommended)", "webp"),
                       ("AVIF (smallest)", "avif"),
@@ -254,6 +281,7 @@ class Job:
     over_limit: bool = False                     # an output exceeded that limit
     from_url: bool = False                       # arrived via the Download tab
     dl_cap: int | None = None                    # resolution cap chosen, None = best
+    est_size: int | None = None                  # rough predicted output bytes
     row: object = field(default=None, repr=False)  # QueueRow, set by the app
 
 
@@ -278,6 +306,8 @@ def status_display(job: Job):
         if job.info and job.info.height:
             return (f"downloaded ✓ · {job.info.height}p", theme.SUCCESS)
         return ("downloaded ✓", theme.SUCCESS)
+    if job.status == "ready" and job.est_size:
+        return (f"ready · ~{human_size(job.est_size)}", theme.TEXT)
     return {
         "reading": ("reading…", theme.TEXT_MUTED),
         "ready": ("ready", theme.TEXT),

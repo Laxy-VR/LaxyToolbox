@@ -36,19 +36,26 @@ modes:
 - **Split to fit** cuts a long video into parts that each fit under the limit.
 
 Optional **Trim** (start/end seconds) on any mode, a **Cut only** checkbox for
-instant lossless trimming, and a **Remove audio** option for gameplay clips.
+instant lossless trimming, **Rotate/flip** for sideways phone videos,
+**burn in subtitles** (auto finds a matching .srt/.ass/.vtt next to each
+video, or pick a file), and a **Remove audio** option for gameplay clips.
 HDR videos keep their 10 bit color on H.265/AV1 and are properly tone mapped
 otherwise.
 
-**🎞 GIF** · Turn a clip into a GIF with a live preview of your chosen start
-frame, tuned palettes, and a dithering choice. Also shrinks existing GIFs.
+**🎞 GIF** · Turn a clip into a loop: classic **GIF**, **animated WebP**
+(much smaller), or a silent **MP4 loop** (smallest). Scrub to the start frame
+with a slider and live previews of the clip's first and last frames, then
+tune speed (0.25x to 4x), direction (forward, reverse, **boomerang**),
+dithering, and palette size (256/128/64 colors). Also shrinks existing GIFs.
 
 **🖼 Images** · Batch convert PNG/JPEG/BMP to **WebP**, **AVIF**, or **JPEG**
 at three quality levels, with optional resizing that never upscales by
-accident.
+accident, and a **strip metadata** option that removes EXIF/GPS before
+sharing.
 
 **🎵 Audio** · Extract the soundtrack from any video, or convert audio files,
-to MP3 or M4A.
+to MP3 or M4A, with optional **volume normalization** for quiet or harsh
+recordings.
 
 **🌐 Download** · Paste a link from YouTube, Twitter, and most sites. Pick a
 max resolution or grab audio only, or turn on **Whole playlist** to fetch
@@ -57,10 +64,11 @@ re-compressed automatically (sites already compress their videos); right click
 one to queue it. DRM protected content is not supported.
 
 **Everywhere:** drag and drop files or folders, mixed batches, thumbnail
-previews and live progress with speed and time remaining, per file savings and
+previews, a rough **predicted output size on every queued file** before you
+start, live progress with speed and time remaining, per file savings and
 batch totals, one-click **presets** for common jobs, plain-language tooltips,
-clear error messages, queue reordering, and a bottom bar that stays visible on
-any screen size.
+clear error messages, queue reordering, a warning before existing files are
+replaced, and a bottom bar that stays visible on any screen size.
 
 ## FAQ
 
@@ -85,7 +93,8 @@ Python 3.10+, [ffmpeg](https://ffmpeg.org) full build on PATH.
 pip install -r requirements.txt
 python app.py          # run from source
 pip install pytest
-pytest -q              # 89 tests, no ffmpeg or display needed
+pytest -q              # no display needed; the ffmpeg smoke tests
+                       # auto-skip when ffmpeg is not on PATH
 pip install pyinstaller
 ./build.ps1            # build the standalone exe into dist/
 ```

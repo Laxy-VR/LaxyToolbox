@@ -38,7 +38,8 @@ def _encoders_list() -> str:
     if _ENCODERS_CACHE is None:
         try:
             r = subprocess.run([FFMPEG, "-hide_banner", "-encoders"],
-                               capture_output=True, text=True, creationflags=NO_WINDOW)
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", creationflags=NO_WINDOW)
             _ENCODERS_CACHE = r.stdout or ""
         except Exception:  # noqa: BLE001
             _ENCODERS_CACHE = ""
@@ -156,8 +157,11 @@ def probe_video(path: str) -> VideoInfo:
         "-show_format", "-show_streams",
         path,
     ]
+    # ffprobe embeds the file name in its JSON; force UTF-8 so non-ASCII
+    # names never raise a decode error under the Windows locale codec.
     result = subprocess.run(
-        cmd, capture_output=True, text=True, creationflags=NO_WINDOW
+        cmd, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", creationflags=NO_WINDOW
     )
     if result.returncode != 0 or not result.stdout:
         raise RuntimeError(f"ffprobe failed:\n{result.stderr.strip()}")
