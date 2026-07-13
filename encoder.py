@@ -204,6 +204,12 @@ def build_stages(input_path: str, output_path: str, settings: dict, mode: str,
 
     # quality mode, single pass
     vargs = _gpu_quality_args(settings) if gpu else _cpu_quality_args(settings)
+    cap = settings.get("vbv_maxrate")
+    if cap and (gpu or codec in ("h265", "h264")):
+        # Capped quality (roomy Target size): CRF decides the size, the VBV
+        # ceiling guarantees the limit. SVT-AV1's wrapper has no clean VBV;
+        # its plain CRF plus the planner's headroom margin suffices.
+        vargs += ["-maxrate", f"{int(cap)}k", "-bufsize", f"{int(2 * cap)}k"]
     cmd = base + vargs + _pix_args(settings, gpu) + tag + filt + _audio_args(settings) \
         + PROGRESS + [output_path]
     return [("encode", cmd)]

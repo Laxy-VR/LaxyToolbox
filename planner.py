@@ -130,6 +130,24 @@ def plan_job(job, mode, base_settings, size_mb):
         vkbps = video_bitrate_for_target(dur_eff, size_mb, audio_kbps, safety)
         if dur_eff <= 0 or vkbps < 50:
             return None, [], "target too small for this file"
+        # When the cap is far above what this video needs at the chosen
+        # quality, encoding AT the cap would inflate it (a 12 MB clip given a
+        # 500 MB target must not balloon). Encode at constant quality with
+        # the cap as a VBV ceiling instead: as small as the content allows,
+        # never over the limit. Tight caps keep the precise 2-pass targeting.
+        w, h, fps = _effective_res_fps(job.info, settings)
+        quality_kbps = estimate_h265_bitrate_kbps(
+            w, h, fps, int(settings.get("crf", 23)),
+            settings.get("codec", "h265"))
+        if quality_kbps and quality_kbps * 1.2 <= vkbps:
+            s = dict(settings)
+            # The ceiling is a safety margin, not a goal: clamp it well below
+            # absurd values (a 500 MB cap on a 3s clip is ~1.3M kbps, whose
+            # doubled bufsize overflows ffmpeg's 32-bit field).
+            s["vbv_maxrate"] = int(min(vkbps, quality_kbps * 4))
+            stages = [(lbl, cmd, dur_eff) for lbl, cmd in build_stages(
+                job.path, job.outputs[0], s, "quality", segment=seg_all)]
+            return stages, [], None
         passlog = os.path.join(tempfile.gettempdir(), f"vc_{os.getpid()}_{job.id}_pass")
         stages = [(lbl, cmd, dur_eff) for lbl, cmd in build_stages(
             job.path, job.outputs[0], size_settings(vkbps), "target",
@@ -224,18 +242,22 @@ def estimate_output_bytes(info, mode, settings, size_mb=None,
             return None
         return info.size_bytes * dur_eff / info.duration
 
-    if mode == MODE_TARGET and size_mb:
-        return size_mb * 1024 * 1024 * 0.95
     if mode == MODE_SPLIT and size_mb:
         n = parts_choice or suggest_parts(dur_eff, size_mb, w, h, fps)
         return n * size_mb * 1024 * 1024 * 0.95
 
-    # Quality (CRF/CQ) mode: the x265 bits-per-pixel model per codec.
+    # Quality (CRF/CQ) model: x265 bits-per-pixel per codec. Target size mode
+    # produces the smaller of the quality estimate and the cap, matching the
+    # capped-quality planning (a roomy cap never inflates the file).
     if not (w and h and fps):
-        return None
+        return size_mb * 1024 * 1024 * 0.95 if (mode == MODE_TARGET and size_mb) \
+            else None
     vkbps = estimate_h265_bitrate_kbps(w, h, fps, int(settings.get("crf", 23)),
                                        settings.get("codec", "h265"))
     audio_mode = settings.get("audio_mode", "copy")
     akbps = 0 if audio_mode in ("copy", "none") \
         else int(str(settings.get("audio_bitrate", "128k")).rstrip("k"))
-    return (vkbps + akbps) * 1000 * dur_eff / 8
+    quality_bytes = (vkbps + akbps) * 1000 * dur_eff / 8
+    if mode == MODE_TARGET and size_mb:
+        return min(quality_bytes, size_mb * 1024 * 1024 * 0.95)
+    return quality_bytes

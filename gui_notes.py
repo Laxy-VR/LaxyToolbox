@@ -152,6 +152,14 @@ class NotesMixin:
         if vkbps < 50:
             return "⚠ Target too small for this file. Raise the size or shorten the clip."
         w, h, fps = self._effective_res_fps(info)
+        quality_kbps = estimate_h265_bitrate_kbps(
+            w, h, fps, int(self.crf_slider.get()), self._codec_value())
+        if quality_kbps and quality_kbps * 1.2 <= vkbps and w and h and fps:
+            est = quality_kbps * 1000 * info.duration / 8
+            return (f"“{os.path.basename(info.path)}” fits well under "
+                    f"{target_mb:.0f} MB: it will be encoded at full quality "
+                    f"(~{human_size(est)}), with the limit as a safety cap. "
+                    "Small videos are never inflated to fill the target.")
         bpp = (vkbps * 1000) / (w * h * fps) if w and h and fps else 0
         msg = (f"For “{os.path.basename(info.path)}”: {target_mb:.0f} MB gives about "
                f"{int(vkbps)} kbps. Predicted quality at {w}×{h}@{fps:.0f}: "
@@ -239,8 +247,17 @@ class NotesMixin:
         self._sync_gif_range_from_entries()
         self._sync_trim_range_from_entries()
 
+    def _clip_sliders_active(self) -> bool:
+        """Drags only mean something once a file with a duration is selected;
+        before that the sliders are inert instead of writing junk times."""
+        job = self._selected_job()
+        return (job is not None and job.info is not None
+                and job.info.duration > 0)
+
     def _on_gif_range(self, lo, hi):
         """Range slider drag: write clip start + length into the entries."""
+        if not self._clip_sliders_active():
+            return
         self._fill_entry(self.gif_start, lo)
         self._fill_entry(self.gif_len, hi - lo)
         self._update_note()
@@ -258,6 +275,8 @@ class NotesMixin:
 
     def _on_trim_range(self, lo, hi):
         """Trim slider drag: a full-width range means 'no trim' (clear fields)."""
+        if not self._clip_sliders_active():
+            return
         span = self._gif_slider_max
         if lo <= span * 0.005 and hi >= span * 0.995:
             self.trim_start.delete(0, "end")

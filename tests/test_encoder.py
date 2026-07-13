@@ -56,6 +56,22 @@ def _base(**over):
     return s
 
 
+def test_quality_vbv_cap_for_roomy_targets():
+    """Capped quality: CRF plus a VBV ceiling (roomy Target size mode)."""
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(vbv_maxrate=2000), "quality"))[0]
+    assert "-crf 22" in cmd and "-maxrate 2000k" in cmd and "-bufsize 4000k" in cmd
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(codec="av1", vbv_maxrate=2000), "quality"))[0]
+    assert "-maxrate" not in cmd  # SVT-AV1 wrapper has no clean VBV
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(encoder="nvenc", vbv_maxrate=2000),
+                              "quality"))[0]
+    assert "-maxrate 2000k" in cmd
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(), "quality"))[0]
+    assert "-maxrate" not in cmd  # plain quality mode stays uncapped
+
+
 def test_quality_x265_command():
     cmd = joined(build_stages("in.mp4", "out.mp4", _base(), "quality"))[0]
     assert "-c:v libx265" in cmd and "-crf 22" in cmd

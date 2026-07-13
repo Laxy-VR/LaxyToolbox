@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.4.1 · 2026-07-13
+- **Target size no longer inflates small videos.** A video that already fits
+  under the limit at full quality is now encoded at constant quality with the
+  limit as a safety ceiling, landing as far below the cap as the content
+  allows (a 24 MB test clip with a 500 MB target now comes out at 0.2 MB
+  instead of ballooning). Tight targets keep the precise 2 pass fitting, and
+  the note under the settings says which will happen.
+- Fixed the trim/clip sliders being stuck at a tiny range when a file was
+  clicked before its analysis finished; they are also inert until a video is
+  selected instead of writing meaningless times.
+
 ## v1.4.0 · 2026-07-13
 - **Lossy GIF compression** (the ezgif trick): a new Lossy option on the GIF
   tab runs gifsicle after the encode, typically making GIFs 30 to 60% smaller

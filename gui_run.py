@@ -348,6 +348,8 @@ class RunMixin:
         if info is not None and self.selected_id is None:
             self._select_job(job)
         elif job.id == self.selected_id:
+            if info is not None:  # row was selected before its probe finished
+                self._configure_gif_slider(info.duration)
             self._update_details()
             self._update_note()
         else:

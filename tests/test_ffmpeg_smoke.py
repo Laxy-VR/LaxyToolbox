@@ -59,6 +59,16 @@ def test_h265_encode_end_to_end(clip):
     assert probe_video(out).video_codec == "hevc"
 
 
+def test_capped_quality_end_to_end(clip):
+    """The roomy-target VBV args must be accepted by a real x265."""
+    out = os.path.join(os.path.dirname(clip), "out_capped.mp4")
+    for _label, cmd in build_stages(clip, out, _settings(vbv_maxrate=2000),
+                                    "quality"):
+        code, tail = run_encode(cmd, 1.0, lambda *a: None, threading.Event())
+        assert code == 0, "\n".join(tail)
+    assert probe_video(out).video_codec == "hevc"
+
+
 def test_bundled_ffmpeg_has_cpu_av1():
     """Regression for the v1.0 release bug: the essentials ffmpeg build lacks
     libsvtav1, silently breaking CPU AV1. Dev and CI must use the full build

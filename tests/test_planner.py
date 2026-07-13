@@ -51,10 +51,28 @@ def test_quality_mode_single_stage():
     assert "libx265" in " ".join(cmd)
 
 
-def test_target_mode_two_pass_with_passlog():
-    stages, passlogs, reason = plan_job(make_job(), MODE_TARGET, settings(), 100)
+def test_target_mode_tight_cap_uses_two_pass():
+    """A cap below what quality needs keeps the precise 2-pass targeting."""
+    stages, passlogs, reason = plan_job(make_job(), MODE_TARGET, settings(), 10)
     assert reason is None and len(passlogs) == 1
     assert [lbl for lbl, _c, _d in stages] == ["analyze", "encode"]
+
+
+def test_target_mode_roomy_cap_uses_capped_quality():
+    """Regression (friend's 12 MB video ballooning toward a 500 MB target):
+    a roomy cap must encode at constant quality with a VBV ceiling, not
+    inflate the file to fill the target."""
+    stages, passlogs, reason = plan_job(make_job(), MODE_TARGET, settings(), 500)
+    assert reason is None and passlogs == []
+    assert len(stages) == 1
+    cmd = " ".join(stages[0][1])
+    assert "-crf" in cmd and "-maxrate" in cmd and "-bufsize" in cmd
+    assert "pass=1" not in cmd
+    assert "-c:a copy" in cmd  # roomy cap keeps lossless audio copy too
+    # the ceiling is clamped to a sane margin, not the raw (huge) cap,
+    # whose doubled bufsize would overflow ffmpeg's 32-bit field
+    maxrate = int(cmd.split("-maxrate ")[1].split("k")[0])
+    assert maxrate < 100_000
 
 
 def test_target_too_small_fails_with_reason():
@@ -135,9 +153,10 @@ def test_image_and_audio_modes_single_stage():
 
 
 def test_target_mode_copy_audio_becomes_aac():
-    """Size targeting needs a known audio bitrate, so 'copy' must be replaced."""
+    """Tight size targeting needs a known audio bitrate, so 'copy' must be
+    replaced (the roomy capped-quality path keeps copy)."""
     stages, _p, reason = plan_job(make_job(), MODE_TARGET,
-                                  settings(audio_mode="copy"), 100)
+                                  settings(audio_mode="copy"), 10)
     assert reason is None
     final = " ".join(stages[-1][1])
     assert "-c:a aac" in final and "-c:a copy" not in final
@@ -200,8 +219,13 @@ def test_estimate_quality_mode_scales_with_crf():
 
 
 def test_estimate_target_and_split():
+    # A roomy cap predicts the QUALITY size (the file is not inflated)...
+    quality = estimate_output_bytes(_info(), MODE_QUALITY, settings())
     est = estimate_output_bytes(_info(), MODE_TARGET, settings(), size_mb=100)
-    assert est == pytest.approx(100 * 1024 * 1024 * 0.95)
+    assert est == pytest.approx(quality)
+    # ...while a tight cap predicts the cap itself.
+    est = estimate_output_bytes(_info(), MODE_TARGET, settings(), size_mb=5)
+    assert est == pytest.approx(5 * 1024 * 1024 * 0.95)
     est = estimate_output_bytes(_info(), MODE_SPLIT, settings(), size_mb=100,
                                 parts_choice=3)
     assert est == pytest.approx(3 * 100 * 1024 * 1024 * 0.95)
