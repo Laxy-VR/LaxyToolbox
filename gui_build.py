@@ -100,6 +100,16 @@ class BuildMixin:
         self._middle.pack(fill="both", expand=True)
         self._build_middle(self._middle, queue_height=90)
 
+    def _fit_window_height(self):
+        """Grow the window when the layout needs more room (e.g. the Advanced
+        section opened), capped to the working screen height. Never shrinks:
+        whatever size the user dragged the window to is respected."""
+        self.update_idletasks()
+        needed = self.winfo_reqheight()
+        if needed > self.winfo_height():
+            usable = self.winfo_screenheight() - 80
+            self.geometry(f"{self.winfo_width()}x{min(needed, usable)}")
+
     # ---------- live re-theming ----------
     def _apply_accent(self, name):
         """Switch the accent without restarting: re-apply the theme, rebuild
@@ -126,6 +136,7 @@ class BuildMixin:
             job.row = None     # them until they're recreated below
         for w in self.winfo_children():
             w.destroy()
+        self._settings_frame = None  # the panel died with the teardown
         self.configure(fg_color=theme.BG)
         self._build_ui()
         if was_scrollable:

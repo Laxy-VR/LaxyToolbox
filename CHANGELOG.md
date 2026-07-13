@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.3 · 2026-07-13
+- Opening the **Advanced** section now grows the window to fit, so the trim
+  controls and the Save to row no longer get pushed out of view.
+- **App settings moved into the main window**: the gear button now swaps the
+  middle of the window for the settings panel (accent colors and About)
+  instead of opening a separate window. Escape or Close brings the app back.
+
 ## v1.3.2 · 2026-07-12
 - Theme changes now apply **instantly**, no restart: the app rebuilds its
   interface in place, keeping the queue, thumbnails, selection, and every

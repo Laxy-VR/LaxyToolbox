@@ -82,6 +82,8 @@ class ConfigMixin:
         self._on_codec_change()
         self._on_gif_format_change()  # sync dither/colors enabled state
         self._refresh_mode()
+        if self._advanced_open:  # restored open: make sure nothing clips
+            self._fit_window_height()
 
     def _save_config(self):
         cfg = {
@@ -286,27 +288,43 @@ class ConfigMixin:
         name_entry.focus_set()
         dlg.grab_set()
 
-    # ---------- app settings (gear button) ----------
+    # ---------- app settings (gear button, in-window panel) ----------
     def _open_app_settings(self):
-        """App-level preferences (accent color, applied instantly) and credits."""
-        dlg = ctk.CTkToplevel(self)
-        dlg.title("App settings")
-        dlg.geometry("400x430")
-        dlg.transient(self)
-        dlg.configure(fg_color=theme.BG)
-        ctk.CTkLabel(dlg, text="Accent color",
-                     font=self.f("sans", 13, "bold")).pack(padx=16, pady=(16, 6),
+        """Toggle the settings panel: it takes the middle section's place in
+        the main window (no separate window) until closed."""
+        if getattr(self, "_settings_frame", None) is not None:
+            self._close_app_settings()
+            return
+        self._middle.pack_forget()
+        panel = ctk.CTkFrame(self, fg_color="transparent")
+        panel.pack(fill="both", expand=True)
+        self._settings_frame = panel
+        self.bind("<Escape>", lambda _e: self._close_app_settings())
+
+        card = ctk.CTkFrame(panel, fg_color=theme.SURFACE, corner_radius=12)
+        card.pack(fill="both", expand=True, padx=20, pady=(0, 8))
+        head = ctk.CTkFrame(card, fg_color="transparent")
+        head.pack(fill="x", padx=16, pady=(14, 4))
+        ctk.CTkLabel(head, text="App settings",
+                     font=self.f("sans", 14, "bold")).pack(side="left")
+        ctk.CTkButton(head, text="✕  Close", width=80,
+                      fg_color=theme.SURFACE2, hover_color=theme.BORDER,
+                      text_color=theme.TEXT,
+                      command=self._close_app_settings).pack(side="right")
+
+        ctk.CTkLabel(card, text="Accent color",
+                     font=self.f("sans", 13, "bold")).pack(padx=16, pady=(8, 4),
                                                            anchor="w")
-        grid = ctk.CTkFrame(dlg, fg_color="transparent")
+        grid = ctk.CTkFrame(card, fg_color="transparent")
         grid.pack(fill="x", padx=16)
-        grid.grid_columnconfigure((0, 1), weight=1)
+        grid.grid_columnconfigure((0, 1, 2), weight=1)
 
         def pick(name):
             if self.start_btn.cget("state") == "disabled":
                 self.status.configure(
                     text="Finish or cancel the current batch first.")
                 return
-            dlg.destroy()
+            self._close_app_settings()
             if name != theme.ACCENT_NAME:
                 self._apply_accent(name)
                 self._save_config()
@@ -314,31 +332,39 @@ class ConfigMixin:
 
         for i, (name, colors) in enumerate(theme.ACCENTS.items()):
             current = " ✓" if name == theme.ACCENT_NAME else ""
-            ctk.CTkButton(grid, text=name + current, height=36,
+            ctk.CTkButton(grid, text=name + current, height=34,
                           fg_color=colors["accent"], hover_color=colors["hover"],
                           text_color=theme.ON_ACCENT,
                           font=self.f("sans", 13, "bold"),
                           command=lambda n=name: pick(n)).grid(
-                row=i // 2, column=i % 2, sticky="ew", padx=6, pady=6)
+                row=i // 3, column=i % 3, sticky="ew", padx=6, pady=6)
 
         # Credits
         import webbrowser
         repo_url = f"https://github.com/{GITHUB_REPO}"
-        ctk.CTkLabel(dlg, text="About",
-                     font=self.f("sans", 13, "bold")).pack(padx=16, pady=(18, 2),
+        ctk.CTkLabel(card, text="About",
+                     font=self.f("sans", 13, "bold")).pack(padx=16, pady=(16, 2),
                                                            anchor="w")
-        ctk.CTkLabel(dlg, text=f"{APP_NAME} v{APP_VERSION} · made by Laxy",
+        ctk.CTkLabel(card, text=f"{APP_NAME} v{APP_VERSION} · made by Laxy",
                      font=self.f("sans", 12)).pack(padx=16, anchor="w")
-        link = ctk.CTkLabel(dlg, text=repo_url, text_color=theme.TITLE,
+        link = ctk.CTkLabel(card, text=repo_url, text_color=theme.TITLE,
                             cursor="hand2", font=self.f("sans", 12))
         link.pack(padx=16, anchor="w")
         link.bind("<Button-1>", lambda _e: webbrowser.open(repo_url))
         ctk.CTkLabel(
-            dlg, wraplength=360, justify="left", text_color=theme.TEXT_MUTED,
+            card, wraplength=560, justify="left", text_color=theme.TEXT_MUTED,
             font=self.f("sans", 11),
             text=("Powered by FFmpeg (video engine), yt-dlp (downloads), "
                   "CustomTkinter and TkinterDnD2 (interface), and Pillow "
                   "(previews). Fonts: DM Sans, IBM Plex Mono, JetBrains Mono. "
                   "Each is the work of its own community; full licenses ship "
-                  "in THIRD_PARTY.md.")).pack(padx=16, pady=(6, 12), anchor="w")
-        dlg.grab_set()
+                  "in THIRD_PARTY.md.")).pack(padx=16, pady=(6, 14), anchor="w")
+
+    def _close_app_settings(self):
+        panel = getattr(self, "_settings_frame", None)
+        if panel is None:
+            return
+        self.unbind("<Escape>")
+        panel.destroy()
+        self._settings_frame = None
+        self._middle.pack(fill="both", expand=True)

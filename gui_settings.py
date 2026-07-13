@@ -124,6 +124,8 @@ class SettingsMixin:
         self.advanced_btn.configure(
             text="Advanced ▴" if self._advanced_open else "Advanced ▾")
         self._refresh_mode()
+        if self._advanced_open:  # the extra rows must not clip the controls
+            self._fit_window_height()
 
     def _refresh_mode(self):
         mode = self._mode()
