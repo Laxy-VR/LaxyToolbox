@@ -102,7 +102,8 @@ class NotesMixin:
                 est = int(est) if est else None
             if est != job.est_size:
                 job.est_size = est
-                job.row.render(selected=(job.id == self.selected_id))
+                if job.row is not None:  # rows are absent mid UI-rebuild
+                    job.row.render(selected=(job.id == self.selected_id))
         self._update_counts()  # keep the batch total in the status bar fresh
 
     def _effective_res_fps(self, info):

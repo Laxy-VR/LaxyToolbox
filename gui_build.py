@@ -18,7 +18,7 @@ from models import (APP_NAME, APP_VERSION, TAB_COMPRESS, TAB_GIF, TAB_IMAGE,
                     PRESETS, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS)
 from probe import gpu_codecs
 from sysutil import resource_path
-from widgets import Tooltip, RangeSlider
+from widgets import Tooltip, RangeSlider, QueueRow
 
 
 class BuildMixin:
@@ -99,6 +99,63 @@ class BuildMixin:
         self._middle = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._middle.pack(fill="both", expand=True)
         self._build_middle(self._middle, queue_height=90)
+
+    # ---------- live re-theming ----------
+    def _apply_accent(self, name):
+        """Switch the accent without restarting: re-apply the theme, rebuild
+        the widgets in place, and put every setting and queue row back."""
+        theme.apply_theme(name)
+        self._rebuild_ui()
+
+    def _rebuild_ui(self):
+        """Tear down and reconstruct the whole UI, preserving session state.
+
+        CustomTkinter widgets take their colors at creation, so a theme change
+        means new widgets. State that lives outside widgets (self.jobs) is
+        re-attached; state that lives inside them is snapshotted via the
+        preset machinery, which round-trips every setting by design.
+        """
+        snapshot = self._collect_preset()
+        outdir = self.outdir_entry.get()
+        url = self.url_entry.get()
+        playlist = bool(self.dl_playlist_check.get())
+        advanced = self._advanced_open
+        was_scrollable = isinstance(self._middle, ctk.CTkScrollableFrame)
+
+        for job in self.jobs:  # rows die with the teardown; nothing may render
+            job.row = None     # them until they're recreated below
+        for w in self.winfo_children():
+            w.destroy()
+        self.configure(fg_color=theme.BG)
+        self._build_ui()
+        if was_scrollable:
+            self._make_middle_scrollable()
+
+        for job in self.jobs:  # re-attach the queue to the fresh queue_frame
+            job.row = QueueRow(self.queue_frame, job, self._select_job,
+                               self._remove_job, self._open_job,
+                               self._context_menu, self._on_row_drag, self.fonts)
+            job.row.pack(fill="x", padx=6, pady=4)
+            job.row.render(selected=(job.id == self.selected_id))
+            if job.thumb_png:
+                job.row.set_thumbnail(job.thumb_png)
+        if self.jobs:
+            self.empty_label.pack_forget()
+
+        self._advanced_open = advanced
+        if advanced:
+            self.advanced_btn.configure(text="Advanced ▴")
+        self._apply_preset(snapshot)  # restores tab, mode, and every control
+        self.outdir_entry.insert(0, outdir)
+        self.url_entry.insert(0, url)
+        if playlist:
+            self.dl_playlist_check.select()
+        if self._gpu_ok is False:
+            self._hide_gpu_option()
+        selected = self._selected_job()
+        if selected is not None:
+            self._select_job(selected)
+        self._update_counts()
 
     def _build_middle(self, mid, queue_height=150):
         # Queue

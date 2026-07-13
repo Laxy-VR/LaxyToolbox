@@ -7,10 +7,10 @@ import tkinter as tk
 import customtkinter as ctk
 
 import theme
-from models import (CONFIG_PATH, TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO,
+from models import (APP_NAME, APP_VERSION, CONFIG_PATH, GITHUB_REPO,
+                    TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO,
                     TAB_DOWNLOAD, MODE_QUALITY, MODE_TARGET, MODE_SPLIT,
                     BUILTIN_PRESETS, PRESET_PLACEHOLDER)
-from sysutil import relaunch
 
 
 class ConfigMixin:
@@ -288,22 +288,17 @@ class ConfigMixin:
 
     # ---------- app settings (gear button) ----------
     def _open_app_settings(self):
-        """App-level preferences: pick the accent color. Applying restarts the
-        app, since CustomTkinter widgets take their colors at creation time."""
+        """App-level preferences (accent color, applied instantly) and credits."""
         dlg = ctk.CTkToplevel(self)
         dlg.title("App settings")
-        dlg.geometry("380x300")
+        dlg.geometry("400x430")
         dlg.transient(self)
         dlg.configure(fg_color=theme.BG)
         ctk.CTkLabel(dlg, text="Accent color",
-                     font=self.f("sans", 13, "bold")).pack(padx=16, pady=(16, 2),
+                     font=self.f("sans", 13, "bold")).pack(padx=16, pady=(16, 6),
                                                            anchor="w")
-        ctk.CTkLabel(dlg, text="Picking one saves your settings and restarts "
-                               "the app to apply it.",
-                     text_color=theme.TEXT_MUTED, wraplength=330,
-                     font=self.f("sans", 11)).pack(padx=16, pady=(0, 8), anchor="w")
         grid = ctk.CTkFrame(dlg, fg_color="transparent")
-        grid.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        grid.pack(fill="x", padx=16)
         grid.grid_columnconfigure((0, 1), weight=1)
 
         def pick(name):
@@ -311,14 +306,11 @@ class ConfigMixin:
                 self.status.configure(
                     text="Finish or cancel the current batch first.")
                 return
-            if name == theme.ACCENT_NAME:
-                dlg.destroy()
-                return
-            theme.ACCENT_NAME = name  # picked up by _save_config
-            self._save_config()
             dlg.destroy()
-            relaunch()
-            self._on_close()
+            if name != theme.ACCENT_NAME:
+                self._apply_accent(name)
+                self._save_config()
+                self.status.configure(text=f"Theme: {name}.")
 
         for i, (name, colors) in enumerate(theme.ACCENTS.items()):
             current = " ✓" if name == theme.ACCENT_NAME else ""
@@ -328,4 +320,25 @@ class ConfigMixin:
                           font=self.f("sans", 13, "bold"),
                           command=lambda n=name: pick(n)).grid(
                 row=i // 2, column=i % 2, sticky="ew", padx=6, pady=6)
+
+        # Credits
+        import webbrowser
+        repo_url = f"https://github.com/{GITHUB_REPO}"
+        ctk.CTkLabel(dlg, text="About",
+                     font=self.f("sans", 13, "bold")).pack(padx=16, pady=(18, 2),
+                                                           anchor="w")
+        ctk.CTkLabel(dlg, text=f"{APP_NAME} v{APP_VERSION} · made by Laxy",
+                     font=self.f("sans", 12)).pack(padx=16, anchor="w")
+        link = ctk.CTkLabel(dlg, text=repo_url, text_color=theme.TITLE,
+                            cursor="hand2", font=self.f("sans", 12))
+        link.pack(padx=16, anchor="w")
+        link.bind("<Button-1>", lambda _e: webbrowser.open(repo_url))
+        ctk.CTkLabel(
+            dlg, wraplength=360, justify="left", text_color=theme.TEXT_MUTED,
+            font=self.f("sans", 11),
+            text=("Powered by FFmpeg (video engine), yt-dlp (downloads), "
+                  "CustomTkinter and TkinterDnD2 (interface), and Pillow "
+                  "(previews). Fonts: DM Sans, IBM Plex Mono, JetBrains Mono. "
+                  "Each is the work of its own community; full licenses ship "
+                  "in THIRD_PARTY.md.")).pack(padx=16, pady=(6, 12), anchor="w")
         dlg.grab_set()

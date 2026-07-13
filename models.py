@@ -7,7 +7,7 @@ import theme
 from probe import VideoInfo
 
 APP_NAME = "Laxy's Toolbox"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
@@ -302,6 +302,7 @@ class Job:
     from_url: bool = False                       # arrived via the Download tab
     dl_cap: int | None = None                    # resolution cap chosen, None = best
     est_size: int | None = None                  # rough predicted output bytes
+    thumb_png: bytes | None = field(default=None, repr=False)  # row preview
     row: object = field(default=None, repr=False)  # QueueRow, set by the app
 
 

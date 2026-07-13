@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.2 · 2026-07-12
+- Theme changes now apply **instantly**, no restart: the app rebuilds its
+  interface in place, keeping the queue, thumbnails, selection, and every
+  setting exactly as they were.
+- New **About section** in the app settings (gear button): version, a link to
+  the project, and credits to FFmpeg, yt-dlp, CustomTkinter, TkinterDnD2,
+  Pillow, and the bundled fonts.
+
 ## v1.3.1 · 2026-07-12
 - Fixed errors when switching themes ("failed to remove temporary directory",
   "failed to start embedded python interpreter"): the restarted copy was

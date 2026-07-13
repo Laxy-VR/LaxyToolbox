@@ -308,6 +308,7 @@ class RunMixin:
         elif kind == "row_thumb":
             job = self._job(msg[1])
             if job and job.row:
+                job.thumb_png = msg[2]  # kept so a UI rebuild can restore it
                 job.row.set_thumbnail(msg[2])
 
     def _set_status(self, jid, status):
