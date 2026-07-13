@@ -101,6 +101,20 @@ class BuildMixin:
         self._middle.pack(fill="both", expand=True)
         self._build_middle(self._middle, queue_height=90)
 
+    def _widest_tab_reqwidth(self) -> int:
+        """Required window width measured with the widest tab (GIF: three
+        control rows plus the preview column) shown. The startup sizing uses
+        this so no tab ever clips its right edge at the default size."""
+        current = self.tab_seg.get()
+        self.tab_seg.set(TAB_GIF)
+        self._refresh_mode()
+        self.update_idletasks()
+        width = self.winfo_reqwidth()
+        self.tab_seg.set(current)
+        self._refresh_mode()
+        self.update_idletasks()
+        return width
+
     def _fit_window_height(self):
         """Grow the window when the layout needs more room (e.g. the Advanced
         section opened), capped to the working screen height. Never shrinks:

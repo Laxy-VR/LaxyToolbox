@@ -67,8 +67,10 @@ class App(BuildMixin, QueueMixin, DownloadsMixin, NotesMixin, SettingsMixin,
         self._user_presets: dict = {}  # name -> settings snapshot, from config
 
         self._build_ui()
-        # Size to fit every control (measured on the taller Compress tab).
+        # Size to fit every control: height is measured on the taller
+        # Compress tab, width on the wider GIF tab (controls + previews).
         self.update_idletasks()
+        need_w = max(700, self._widest_tab_reqwidth())
         needed = self.winfo_reqheight()
         usable = self.winfo_screenheight() - 80  # leave room for the taskbar
         if needed > usable:
@@ -77,13 +79,13 @@ class App(BuildMixin, QueueMixin, DownloadsMixin, NotesMixin, SettingsMixin,
             # bottom bar is pinned, so the action buttons stay visible.
             self._make_middle_scrollable()
             self.update_idletasks()
-            self.minsize(680, min(520, usable))
-            self.geometry(f"760x{usable}")
+            self.minsize(need_w, min(520, usable))
+            self.geometry(f"{need_w}x{usable}")
         else:
-            self.minsize(680, needed)
+            self.minsize(need_w, needed)
             # Open a bit taller than the minimum when the screen allows it,
             # giving the file queue some breathing room.
-            self.geometry(f"760x{min(needed + 60, usable)}")
+            self.geometry(f"{need_w}x{min(needed + 60, usable)}")
         self._load_config()
         self._set_app_icon()
         self.protocol("WM_DELETE_WINDOW", self._on_close)

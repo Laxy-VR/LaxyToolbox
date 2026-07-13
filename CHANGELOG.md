@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.4.2 · 2026-07-13
+- The window now opens wide enough for the GIF tab's preview thumbnails and
+  new controls; the width is measured from the widest tab at startup instead
+  of a fixed size, so nothing clips off the right edge.
+
 ## v1.4.1 · 2026-07-13
 - **Target size no longer inflates small videos.** A video that already fits
   under the limit at full quality is now encoded at constant quality with the
