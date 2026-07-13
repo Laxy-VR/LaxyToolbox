@@ -93,6 +93,29 @@ def test_loop_formats_end_to_end(clip, fmt, ext):
         assert probe_video(out).duration == pytest.approx(0.5, abs=0.2)
 
 
+def test_lossy_gif_end_to_end(clip):
+    """The gifsicle pass must run and actually shrink the file."""
+    from probe import has_gifsicle
+    if not has_gifsicle():
+        pytest.skip("gifsicle not available")
+    base = {"target_fps": 10, "target_height": 120, "gif_format": "gif"}
+    plain = os.path.join(os.path.dirname(clip), "plain.gif")
+    lossy = os.path.join(os.path.dirname(clip), "lossy.gif")
+    _run(build_gif_stages(clip, plain, base, segment=(0, 1)))
+    _run(build_gif_stages(clip, lossy, dict(base, gif_lossy=140),
+                          segment=(0, 1)))
+    assert 0 < os.path.getsize(lossy) < os.path.getsize(plain)
+
+
+def test_dedupe_gif_end_to_end(clip):
+    """mpdecimate must survive the palette graph on a real ffmpeg."""
+    out = os.path.join(os.path.dirname(clip), "dedupe.gif")
+    _run(build_gif_stages(clip, out, {"target_fps": 10, "target_height": 120,
+                                      "gif_format": "gif",
+                                      "gif_dedupe": True}, segment=(0, 1)))
+    assert os.path.getsize(out) > 0
+
+
 def test_boomerang_speed_gif_end_to_end(clip):
     """Regression: a 1s clip at 2x speed, boomeranged, must come out ~1s
     (0.5s forward + 0.5s back). The output-side -t bug truncated the bounce

@@ -9,6 +9,10 @@ license:
   x264 and x265. FFmpeg is a separate program invoked by this app, not linked
   into it. Source code and build details: https://ffmpeg.org and
   https://www.gyan.dev/ffmpeg/builds/
+- **Gifsicle (gifsicle.exe)** · GPL v2, by Eddie Kohler. A separate program
+  invoked for the lossy GIF option, not linked into the app. Source:
+  https://www.lcdf.org/gifsicle/ · Windows builds:
+  https://eternallybored.org/misc/gifsicle/
 - **CustomTkinter** · MIT · https://github.com/TomSchimansky/CustomTkinter
 - **tkinterdnd2 / tkdnd** · MIT · https://github.com/pmgagne/tkinterdnd2
 - **Pillow** · MIT-CMU (HPND) · https://python-pillow.org

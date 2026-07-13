@@ -29,6 +29,16 @@ def _tool_path(name: str) -> str:
 
 FFMPEG = _tool_path("ffmpeg")
 FFPROBE = _tool_path("ffprobe")
+GIFSICLE = _tool_path("gifsicle")
+
+
+def has_gifsicle() -> bool:
+    """True when gifsicle is available (bundled in the exe, or on PATH in
+    dev). The lossy GIF option is only offered when it is."""
+    if os.path.isabs(GIFSICLE):
+        return True
+    import shutil
+    return shutil.which(GIFSICLE) is not None
 
 _ENCODERS_CACHE = None
 

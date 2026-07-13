@@ -5,7 +5,7 @@ import os
 import subprocess
 from collections import deque
 
-from probe import NO_WINDOW, FFMPEG
+from probe import NO_WINDOW, FFMPEG, GIFSICLE
 from sysutil import track_child, untrack_child
 
 
@@ -243,6 +243,11 @@ def build_gif_stages(input_path: str, output_path: str, settings: dict, segment=
     chain.append(f"fps={fps}")
     if settings.get("target_height"):
         chain.append(f"scale=-2:{settings['target_height']}:flags=lanczos")
+    if settings.get("gif_dedupe"):
+        # Drop near-identical frames AFTER the fps normalisation (fps would
+        # just re-duplicate them). GIF/WebP store per-frame delays, so the
+        # remaining frames keep the original timing.
+        chain.append("mpdecimate")
     graph = ",".join(chain)
     # reverse buffers the whole (short) clip in memory, so it comes after the
     # fps/scale reductions to keep that buffer small.
@@ -271,7 +276,15 @@ def build_gif_stages(input_path: str, output_path: str, settings: dict, segment=
               f"[s1][p]paletteuse=dither={dither}:diff_mode=rectangle")
     cmd = _input_args(input_path, segment) + \
         ["-filter_complex", graph, "-loop", "0"] + PROGRESS + [output_path]
-    return [("gif", cmd)]
+    stages = [("gif", cmd)]
+    lossy = settings.get("gif_lossy")
+    if lossy:
+        # gifsicle's lossy LZW pass: the one size lever ffmpeg doesn't have,
+        # typically 30-60% smaller for barely visible artifacts. -b rewrites
+        # the file in place; -O3 also re-optimises frame deltas.
+        stages.append(("optimize", [GIFSICLE, "-b", "-O3",
+                                    f"--lossy={int(lossy)}", output_path]))
+    return stages
 
 
 def build_cut_stages(input_path: str, output_path: str, segment):

@@ -15,6 +15,10 @@ on:
 env:
   FFMPEG_URL: https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build.zip
   FFMPEG_SHA256: D760E1B3574402ED18B4865851F87D87E73965A982E6453212DF8621FED1C508
+  # gifsicle powers the lossy GIF option; Windows builds are the ones the
+  # official gifsicle homepage links to.
+  GIFSICLE_URL: https://eternallybored.org/misc/gifsicle/releases/gifsicle-1.95-win64.zip
+  GIFSICLE_SHA256: 7E47DD0BFD5EE47F911464C57FAEED89A8709A7625DD1C449B16579889539EE8
 
 jobs:
   test:
@@ -25,7 +29,7 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt pytest
-      - name: Fetch pinned ffmpeg (for the smoke tests)
+      - name: Fetch pinned ffmpeg + gifsicle (for the smoke tests)
         shell: pwsh
         run: |
           curl.exe -sL -o ffmpeg.zip $env:FFMPEG_URL
@@ -36,6 +40,13 @@ jobs:
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
           $bin = (Get-ChildItem ffmpeg_tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
           Add-Content $env:GITHUB_PATH $bin
+          curl.exe -sL -o gifsicle.zip $env:GIFSICLE_URL
+          $actual = (Get-FileHash gifsicle.zip -Algorithm SHA256).Hash
+          if ($actual -ne $env:GIFSICLE_SHA256) {
+            throw "gifsicle checksum mismatch: expected $env:GIFSICLE_SHA256, got $actual"
+          }
+          Expand-Archive gifsicle.zip -DestinationPath gifsicle_tmp
+          Copy-Item (Get-ChildItem gifsicle_tmp -Recurse -Filter gifsicle.exe | Select-Object -First 1).FullName $bin
       - run: pytest -q
 
   build:
@@ -51,11 +62,11 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt pyinstaller
-      - name: Fetch pinned ffmpeg (bundled into the exe)
+      - name: Fetch pinned ffmpeg + gifsicle (bundled into the exe)
         shell: pwsh
         run: |
-          # This artifact ships inside the exe, so its integrity is verified
-          # against the pinned hash before anything is bundled.
+          # These artifacts ship inside the exe, so their integrity is
+          # verified against the pinned hashes before anything is bundled.
           curl.exe -sL -o ffmpeg.zip $env:FFMPEG_URL
           $actual = (Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash
           if ($actual -ne $env:FFMPEG_SHA256) {
@@ -64,6 +75,13 @@ jobs:
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
           $bin = (Get-ChildItem ffmpeg_tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
           Add-Content $env:GITHUB_PATH $bin
+          curl.exe -sL -o gifsicle.zip $env:GIFSICLE_URL
+          $actual = (Get-FileHash gifsicle.zip -Algorithm SHA256).Hash
+          if ($actual -ne $env:GIFSICLE_SHA256) {
+            throw "gifsicle checksum mismatch: expected $env:GIFSICLE_SHA256, got $actual"
+          }
+          Expand-Archive gifsicle.zip -DestinationPath gifsicle_tmp
+          Copy-Item (Get-ChildItem gifsicle_tmp -Recurse -Filter gifsicle.exe | Select-Object -First 1).FullName $bin
       - name: Build exe
         shell: pwsh
         run: ./build.ps1

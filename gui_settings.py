@@ -10,7 +10,8 @@ from models import (TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD,
                     MODE_IMAGE, MODE_AUDIO, MODE_DOWNLOAD, CODEC_OPTIONS,
                     HW_OPTIONS, GIF_DITHER_OPTIONS, GIF_FORMAT_OPTIONS,
                     GIF_SPEED_OPTIONS, GIF_DIRECTION_OPTIONS,
-                    GIF_COLORS_OPTIONS, ROTATE_OPTIONS, SUBS_NONE, SUBS_AUTO,
+                    GIF_COLORS_OPTIONS, GIF_LOSSY_OPTIONS,
+                    ROTATE_OPTIONS, SUBS_NONE, SUBS_AUTO,
                     SUBS_PICK, IMG_FORMAT_OPTIONS, IMG_QUALITY_OPTIONS,
                     IMG_RESIZE_OPTIONS, AUD_FORMAT_OPTIONS,
                     AUD_QUALITY_OPTIONS, RESOLUTIONS, FPS_OPTIONS,
@@ -23,11 +24,12 @@ class SettingsMixin:
         self._update_note()
 
     def _on_gif_format_change(self, _value=None):
-        # Palette options only exist for classic GIF output.
+        # Palette and lossy options only exist for classic GIF output.
         fmt = dict(GIF_FORMAT_OPTIONS)[self.gif_format_menu.get()]
         state = "normal" if fmt == "gif" else "disabled"
         self.dither_menu.configure(state=state)
         self.gif_colors_menu.configure(state=state)
+        self.gif_lossy_menu.configure(state=state)
         self._update_note()
 
     def _on_subs_change(self, value=None):
@@ -217,6 +219,8 @@ class SettingsMixin:
             "gif_speed": dict(GIF_SPEED_OPTIONS)[self.gif_speed_menu.get()],
             "gif_direction": dict(GIF_DIRECTION_OPTIONS)[self.gif_direction_menu.get()],
             "gif_colors": dict(GIF_COLORS_OPTIONS)[self.gif_colors_menu.get()],
+            "gif_lossy": dict(GIF_LOSSY_OPTIONS)[self.gif_lossy_menu.get()],
+            "gif_dedupe": bool(self.gif_dedupe_check.get()),
             "img_format": dict(IMG_FORMAT_OPTIONS)[self.img_format_menu.get()],
             "img_quality": dict(IMG_QUALITY_OPTIONS)[self.img_quality_menu.get()],
             "img_resize": dict(IMG_RESIZE_OPTIONS)[self.img_resize_menu.get()],

@@ -49,6 +49,9 @@ class ConfigMixin:
         set_menu(self.gif_speed_menu, "gif_speed")
         set_menu(self.gif_direction_menu, "gif_direction")
         set_menu(self.gif_colors_menu, "gif_colors")
+        set_menu(self.gif_lossy_menu, "gif_lossy")
+        if cfg.get("gif_dedupe"):
+            self.gif_dedupe_check.select()
         set_menu(self.img_format_menu, "img_format")
         set_menu(self.img_quality_menu, "img_quality")
         set_menu(self.img_resize_menu, "img_resize")
@@ -102,6 +105,8 @@ class ConfigMixin:
             "gif_speed": self.gif_speed_menu.get(),
             "gif_direction": self.gif_direction_menu.get(),
             "gif_colors": self.gif_colors_menu.get(),
+            "gif_lossy": self.gif_lossy_menu.get(),
+            "gif_dedupe": bool(self.gif_dedupe_check.get()),
             "img_format": self.img_format_menu.get(),
             "img_quality": self.img_quality_menu.get(),
             "img_resize": self.img_resize_menu.get(),
@@ -149,6 +154,8 @@ class ConfigMixin:
             "gif_speed": self.gif_speed_menu.get(),
             "gif_direction": self.gif_direction_menu.get(),
             "gif_colors": self.gif_colors_menu.get(),
+            "gif_lossy": self.gif_lossy_menu.get(),
+            "gif_dedupe": bool(self.gif_dedupe_check.get()),
             "img_strip": bool(self.img_strip_check.get()),
             "aud_normalize": bool(self.aud_normalize_check.get()),
             "img_format": self.img_format_menu.get(),
@@ -204,6 +211,8 @@ class ConfigMixin:
         menu(self.gif_speed_menu, "gif_speed")
         menu(self.gif_direction_menu, "gif_direction")
         menu(self.gif_colors_menu, "gif_colors")
+        menu(self.gif_lossy_menu, "gif_lossy")
+        check(self.gif_dedupe_check, "gif_dedupe")
         check(self.img_strip_check, "img_strip")
         check(self.aud_normalize_check, "aud_normalize")
         menu(self.img_format_menu, "img_format")

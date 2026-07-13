@@ -87,9 +87,12 @@ def plan_job(job, mode, base_settings, size_mb):
         if length <= 0:
             return None, [], "clip start is past the end of this file"
         # Progress tracks the OUTPUT timeline, which speed/boomerang stretch.
+        # The gifsicle optimize pass is quick and reports no timeline.
         out_len = gif_output_duration(length, settings)
-        stages = [(lbl, cmd, out_len) for lbl, cmd in build_gif_stages(
-            job.path, job.outputs[0], settings, segment=(start, length))]
+        stages = [(lbl, cmd, 1.0 if lbl == "optimize" else out_len)
+                  for lbl, cmd in build_gif_stages(
+                      job.path, job.outputs[0], settings,
+                      segment=(start, length))]
         return stages, [], None
 
     # Video modes share the optional trim: encode only start..end seconds.
@@ -207,7 +210,11 @@ def estimate_output_bytes(info, mode, settings, size_mb=None,
         if fmt == "mp4":
             vkbps = estimate_h265_bitrate_kbps(w, h, gfps, 23, "h264")
             return vkbps * 1000 * out_len / 8
-        return w * h * gfps * out_len * _GIF_BPPF * _LOOP_FACTOR.get(fmt, 1.0)
+        est = w * h * gfps * out_len * _GIF_BPPF * _LOOP_FACTOR.get(fmt, 1.0)
+        lossy = settings.get("gif_lossy") or 0
+        if fmt == "gif" and lossy:  # rough gifsicle --lossy savings
+            est *= 0.7 if lossy <= 40 else 0.55 if lossy <= 100 else 0.45
+        return est
 
     # Video encode modes need a real duration.
     if dur_eff <= 0:

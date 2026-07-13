@@ -201,6 +201,30 @@ def test_gif_palette_colors():
     assert "max_colors=128" in cmd
 
 
+def test_gif_lossy_adds_gifsicle_stage():
+    stages = build_gif_stages("in.mp4", "out.gif",
+                              {"target_fps": 15, "gif_lossy": 80})
+    assert [lbl for lbl, _c in stages] == ["gif", "optimize"]
+    opt = " ".join(stages[1][1])
+    assert "--lossy=80" in opt and "-O3" in opt and opt.endswith("out.gif")
+    # off / non-gif formats get no gifsicle pass
+    assert len(build_gif_stages("in.mp4", "out.gif",
+                                {"target_fps": 15, "gif_lossy": None})) == 1
+    assert len(build_gif_stages("in.mp4", "out.webp",
+                                {"target_fps": 15, "gif_format": "webp",
+                                 "gif_lossy": 80})) == 1
+
+
+def test_gif_dedupe_after_fps():
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_dedupe": True}))[0]
+    assert "mpdecimate" in cmd
+    assert cmd.index("fps=15") < cmd.index("mpdecimate")  # fps first, or it
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",  # re-duplicates frames
+                                  {"target_fps": 15}))[0]
+    assert "mpdecimate" not in cmd
+
+
 def test_gif_output_duration():
     from encoder import gif_output_duration
     assert gif_output_duration(5.0, {}) == 5.0

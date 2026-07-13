@@ -11,12 +11,13 @@ from models import (APP_NAME, APP_VERSION, TAB_COMPRESS, TAB_GIF, TAB_IMAGE,
                     MODE_SPLIT, DL_RES_OPTIONS, DL_COOKIES_OPTIONS,
                     PRESET_PLACEHOLDER, CODEC_OPTIONS, HW_OPTIONS,
                     GIF_DITHER_OPTIONS, GIF_FORMAT_OPTIONS, GIF_SPEED_OPTIONS,
-                    GIF_DIRECTION_OPTIONS, GIF_COLORS_OPTIONS, ROTATE_OPTIONS,
+                    GIF_DIRECTION_OPTIONS, GIF_COLORS_OPTIONS,
+                    GIF_LOSSY_OPTIONS, ROTATE_OPTIONS,
                     SUBS_NONE, SUBS_AUTO, SUBS_PICK, IMG_FORMAT_OPTIONS,
                     IMG_QUALITY_OPTIONS, IMG_RESIZE_OPTIONS,
                     AUD_FORMAT_OPTIONS, AUD_QUALITY_OPTIONS, PARTS_OPTIONS,
                     PRESETS, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS)
-from probe import gpu_codecs
+from probe import gpu_codecs, has_gifsicle
 from sysutil import resource_path
 from widgets import Tooltip, RangeSlider, QueueRow
 
@@ -275,6 +276,16 @@ class BuildMixin:
             command=self._on_setting_changed)
         self.gif_colors_menu.set(GIF_COLORS_OPTIONS[0][0])
         self.gif_colors_menu.pack(side="left", padx=(8, 0))
+        # Lossy compression needs gifsicle; the menu only appears when the
+        # tool is available (always, in the packaged exe).
+        self._gifsicle_ok = has_gifsicle()
+        self.gif_lossy_menu = ctk.CTkOptionMenu(
+            row1, width=90, values=[o[0] for o in GIF_LOSSY_OPTIONS],
+            command=self._on_setting_changed)
+        self.gif_lossy_menu.set(GIF_LOSSY_OPTIONS[0][0])
+        if self._gifsicle_ok:
+            ctk.CTkLabel(row1, text="Lossy").pack(side="left", padx=(12, 0))
+            self.gif_lossy_menu.pack(side="left", padx=(8, 0))
         row2 = ctk.CTkFrame(gif_left, fg_color="transparent")
         row2.pack(anchor="w", pady=(8, 0))
         ctk.CTkLabel(row2, text="Save as").pack(side="left")
@@ -294,6 +305,9 @@ class BuildMixin:
             command=self._on_setting_changed)
         self.gif_direction_menu.set(GIF_DIRECTION_OPTIONS[0][0])
         self.gif_direction_menu.pack(side="left", padx=(8, 0))
+        self.gif_dedupe_check = ctk.CTkCheckBox(
+            row2, text="Skip still frames", command=self._on_setting_changed)
+        self.gif_dedupe_check.pack(side="left", padx=(14, 0))
         previews = ctk.CTkFrame(self.gif_frame, fg_color="transparent")
         previews.grid(row=0, column=1, sticky="ne", padx=(16, 0))
         self.gif_preview = ctk.CTkLabel(previews, text="start",
@@ -518,6 +532,12 @@ class BuildMixin:
                                      "whole clip in memory while encoding.",
             self.gif_colors_menu: "Fewer colors make a clearly smaller GIF. Works "
                                   "best on screen recordings and simple footage.",
+            self.gif_lossy_menu: "Lossy compression (gifsicle): usually 30-60% "
+                                 "smaller for barely visible artifacts. Light is "
+                                 "a safe default; Strong squeezes hardest.",
+            self.gif_dedupe_check: "Drops frames where nothing moved (great for "
+                                   "screen recordings). Timing is preserved, the "
+                                   "file just skips the still parts.",
             self.gif_speed_menu: "Play the clip faster or slower. 2x halves the "
                                  "length, which also halves the file size.",
             self.rotate_menu: "Fix a phone video recorded sideways, or mirror "

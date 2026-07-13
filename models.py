@@ -7,7 +7,7 @@ import theme
 from probe import VideoInfo
 
 APP_NAME = "Laxy's Toolbox"
-APP_VERSION = "1.3.3"
+APP_VERSION = "1.4.0"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
@@ -78,6 +78,10 @@ GIF_DIRECTION_OPTIONS = [("Forward", "forward"), ("Reverse", "reverse"),
 # Fewer palette colors shrink a GIF a lot on simple footage (gif only).
 GIF_COLORS_OPTIONS = [("256 colors", 256), ("128 colors", 128),
                       ("64 colors", 64)]
+# gifsicle --lossy level: higher = smaller file, more artifacts. Values are
+# the sweet spots ezgif-style tools use across its 0..200 range.
+GIF_LOSSY_OPTIONS = [("Off", None), ("Light", 30), ("Medium", 80),
+                     ("Strong", 140)]
 GIF_OUT_EXT = {"gif": ".gif", "webp": ".webp", "mp4": "_loop.mp4"}
 
 # Rotation/flip for phone videos recorded sideways. Values are ffmpeg filters.

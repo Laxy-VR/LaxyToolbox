@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.4.0 · 2026-07-13
+- **Lossy GIF compression** (the ezgif trick): a new Lossy option on the GIF
+  tab runs gifsicle after the encode, typically making GIFs 30 to 60% smaller
+  for barely visible artifacts. Light / Medium / Strong levels.
+- **Skip still frames**: drops frames where nothing moved (screen recordings
+  shrink a lot). Timing is preserved.
+- gifsicle 1.95 is bundled into the exe like ffmpeg, pinned and checksum
+  verified in CI, credited in THIRD_PARTY.md.
+
 ## v1.3.3 · 2026-07-13
 - Opening the **Advanced** section now grows the window to fit, so the trim
   controls and the Save to row no longer get pushed out of view.

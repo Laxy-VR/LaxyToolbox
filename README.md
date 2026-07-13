@@ -46,7 +46,9 @@ otherwise.
 (much smaller), or a silent **MP4 loop** (smallest). Scrub to the start frame
 with a slider and live previews of the clip's first and last frames, then
 tune speed (0.25x to 4x), direction (forward, reverse, **boomerang**),
-dithering, and palette size (256/128/64 colors). Also shrinks existing GIFs.
+dithering, and palette size (256/128/64 colors). **Lossy compression**
+(gifsicle) squeezes GIFs another 30 to 60% at three strengths, and **Skip
+still frames** drops frames where nothing moved. Also shrinks existing GIFs.
 
 **🖼 Images** · Batch convert PNG/JPEG/BMP to **WebP**, **AVIF**, or **JPEG**
 at three quality levels, with optional resizing that never upscales by

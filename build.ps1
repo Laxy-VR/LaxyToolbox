@@ -5,8 +5,10 @@
 
 $ffmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
 $ffprobe = (Get-Command ffprobe -ErrorAction Stop).Source
-Write-Host "Bundling ffmpeg:  $ffmpeg"
-Write-Host "Bundling ffprobe: $ffprobe"
+$gifsicle = (Get-Command gifsicle -ErrorAction Stop).Source
+Write-Host "Bundling ffmpeg:   $ffmpeg"
+Write-Host "Bundling ffprobe:  $ffprobe"
+Write-Host "Bundling gifsicle: $gifsicle"
 
 pyinstaller --noconfirm --onefile --windowed `
     --name "Laxy Toolbox" `
@@ -15,6 +17,7 @@ pyinstaller --noconfirm --onefile --windowed `
     --collect-all tkinterdnd2 `
     --add-binary "$ffmpeg;." `
     --add-binary "$ffprobe;." `
+    --add-binary "$gifsicle;." `
     --add-data "laxy.ico;." `
     --add-data "fonts;fonts" `
     app.py
