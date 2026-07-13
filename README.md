@@ -32,7 +32,9 @@ modes:
 - **Best quality** picks settings from the video's own metadata for the
   smallest file with no visible quality loss, and predicts the output size.
 - **Target size** fits any video under a limit (500 MB for Discord Nitro,
-  for example) and warns if the result lands over.
+  for example) and warns if the result lands over. Small videos are never
+  inflated to fill the cap: if a file already fits at full quality, it is
+  encoded at best quality with the limit as a safety ceiling.
 - **Split to fit** cuts a long video into parts that each fit under the limit.
 
 Optional **Trim** (start/end seconds) on any mode, a **Cut only** checkbox for
@@ -91,17 +93,26 @@ green, teal, rose, or amber) via the gear button.
 - **Compressing a downloaded video makes it bigger.** Platform videos are
   already heavily compressed; the app tells you this in its notes. Compress
   your own recordings, not re-downloads, for real savings.
+- **My GIF is still too big.** In order of impact: save as WebP or MP4 loop
+  instead (far smaller, Discord plays both), turn on Lossy (30 to 60% off,
+  even on already optimized GIFs), lower the frame rate or resolution, and
+  use Skip still frames for screen recordings. If it must be a .gif, Strong
+  lossy plus 128 colors is the squeeze combo.
+- **Where are the theme colors?** The gear button in the header: six accent
+  colors that restyle the whole app instantly, plus the About/credits.
 
 ## Development
 
-Python 3.10+, [ffmpeg](https://ffmpeg.org) full build on PATH.
+Python 3.10+, [ffmpeg](https://ffmpeg.org) **full** build and
+[gifsicle](https://www.lcdf.org/gifsicle/) on PATH (both are bundled into the
+exe by `build.ps1`, which fails without them).
 
 ```powershell
 pip install -r requirements.txt
 python app.py          # run from source
 pip install pytest
-pytest -q              # no display needed; the ffmpeg smoke tests
-                       # auto-skip when ffmpeg is not on PATH
+pytest -q              # no display needed; the real-encode smoke tests
+                       # auto-skip when ffmpeg/gifsicle are not on PATH
 pip install pyinstaller
 ./build.ps1            # build the standalone exe into dist/
 ```

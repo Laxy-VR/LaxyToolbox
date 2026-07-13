@@ -18,12 +18,12 @@ workflow.
 | `gui_config.py` | Persistence: the config file and named setting presets. |
 | `models.py` | Constants (tabs, modes, dropdown options), the `Job` dataclass, small pure helpers (`status_display`, `unique_path`, `kind_icon`). |
 | `encoder.py` | Builds and runs every ffmpeg command: `build_stages` (video, all codecs and modes), `build_gif_stages`, `build_image_stages`, `build_audio_stages`, `build_cut_stages`, plus the size math (`video_bitrate_for_target`, `suggest_parts`). |
-| `planner.py` | Pure planning: `plan_job` turns one queued job + mode + settings snapshot into `(label, command, duration)` stages and 2 pass log paths. No widgets or threads, fully unit tested. |
-| `probe.py` | Reads metadata via ffprobe (`probe_video` → `VideoInfo`), recommends settings, resolves the bundled ffmpeg/ffprobe paths, detects GPU encoders (`gpu_codecs`, `nvenc_works`), extracts preview frames. |
+| `planner.py` | Pure planning: `plan_job` turns one queued job + mode + settings snapshot into `(label, command, duration)` stages and 2 pass log paths; `estimate_output_bytes` backs the per-row size predictions; the Target size roomy/tight decision lives here. No widgets or threads, fully unit tested. |
+| `probe.py` | Reads metadata via ffprobe (`probe_video` → `VideoInfo`), recommends settings, resolves the bundled ffmpeg/ffprobe/gifsicle paths, detects GPU encoders (`gpu_codecs`, `nvenc_works`), extracts preview frames. |
 | `downloader.py` | yt-dlp integration: fetch and self update the binary, build the download command, parse progress, locate the finished file. |
-| `widgets.py` | `QueueRow`, the per file list item. |
-| `sysutil.py` | Windows helpers: keep awake, taskbar flash, bundled resource paths, GitHub release lookup for the update check, and the child process registry (`track_child` / `terminate_children`) that stops window close from orphaning ffmpeg or yt-dlp. |
-| `theme.py` | Brand palette, private font loading, CustomTkinter theme override. |
+| `widgets.py` | `QueueRow` (the per file list item, draggable), `Tooltip` (static or live text), and `RangeSlider` (the two handle Canvas slider behind the GIF clip and trim ranges). |
+| `sysutil.py` | Windows helpers: keep awake, taskbar flash and real taskbar progress (ITaskbarList3 via ctypes), bundled resource paths, GitHub release lookup, self relaunch with a reset PyInstaller environment, and the child process registry (`track_child` / `terminate_children`) that stops window close from orphaning ffmpeg or yt-dlp. |
+| `theme.py` | Accent palettes (`ACCENTS`), private font loading, CustomTkinter theme override. `apply_theme(accent)` also rotates every neutral's hue to follow the accent, so a green app gets green tinted darks. |
 
 ### The mixin split
 
@@ -51,6 +51,24 @@ built by `_build_middle(parent)`; at startup the app measures its required
 height against the screen and, when it does not fit (small laptops, high DPI
 scaling), rebuilds the middle inside a `CTkScrollableFrame`
 (`_make_middle_scrollable`).
+
+Window sizing is **measured, never hardcoded**: height comes from the tallest
+tab (Compress) and width from the widest (`_widest_tab_reqwidth`, the GIF tab
+with its preview column). Opening the Advanced section grows the window if
+needed (`_fit_window_height`); it never shrinks a user dragged size. If a new
+control clips at the default size, the measurement is what to fix, not a
+pixel constant.
+
+### Live re-theming and the settings panel
+
+CustomTkinter widgets take their colors at creation, so changing the accent
+rebuilds the UI in place: `_apply_accent` → `_rebuild_ui` snapshots every
+control through the preset machinery, destroys all widgets, rebuilds, and
+re-attaches the queue rows from `self.jobs` (thumbnails are cached on the
+Job). **Rows must be detached first** (`job.row = None`): anything that
+renders rows mid rebuild (the estimate refresher) would otherwise touch
+destroyed widgets and wedge the UI. The app settings (accents + About) are an
+in window panel that swaps places with `self._middle`, not a Toplevel.
 
 ### Tabs and modes
 
@@ -103,6 +121,38 @@ ingredients.
 - Local builds bundle whatever `Get-Command ffmpeg` finds. A polluted global
   Python also bloats local exes (PyInstaller bundles importable extras like
   numpy); the CI exe from a clean environment is the canonical artifact.
+- **gifsicle** (lossy GIF pass) is pinned the same way: 1.95 win64 from the
+  official Windows builds, `GIFSICLE_URL`/`GIFSICLE_SHA256` in `ci.yml`,
+  bundled by `build.ps1` (which requires it on PATH, next to ffmpeg on dev
+  machines). The Lossy menu hides itself when gifsicle is missing
+  (`probe.has_gifsicle`), same pattern as the GPU option.
+
+### Trimming and timeline filters
+- `-ss` **and** `-t` must both precede `-i` (input side trim). With `-t`
+  after `-i` it caps the OUTPUT instead, which breaks every filter that
+  stretches the timeline (boomerang lost its bounce, speed covered the wrong
+  source span in v1.2.0) and forces palette GIFs to read the whole source
+  before writing a frame. A unit test pins the argument order and the smoke
+  tests assert real output durations.
+- `setpts` (speed) goes BEFORE the `fps` filter so the rate change actually
+  drops/duplicates frames; `mpdecimate` (skip still frames) goes AFTER `fps`,
+  which would otherwise re-duplicate what it removed.
+
+### Target size never inflates
+- A cap far above what the video needs (12 MB clip, 500 MB target) must not
+  be "hit": `plan_job` compares the quality bitrate estimate against the cap
+  and, when it fits with 1.2x margin, encodes at constant quality with a VBV
+  ceiling instead of 2 pass ABR. The ceiling is clamped to 4x the quality
+  estimate: the raw cap's doubled bufsize can overflow ffmpeg's 32 bit field
+  (a 500 MB / 3 s cap is ~1.3M kbps). Tight caps keep the precise 2 pass.
+
+### PyInstaller self-relaunch
+- A onefile exe that spawns itself must scrub `_PYI*`/`_MEIPASS*` from the
+  child environment and set `PYINSTALLER_RESET_ENVIRONMENT=1`
+  (`sysutil._relaunch_env`), or the child reuses the parent's `_MEI` temp
+  directory and dies when the parent exits ("failed to start embedded python
+  interpreter"). Themes no longer restart, but the helper stays for anything
+  that does.
 
 ### yt-dlp
 - `--ignore-config` is mandatory: a user's own yt-dlp config (for example
