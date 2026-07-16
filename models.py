@@ -82,6 +82,10 @@ GIF_COLORS_OPTIONS = [("256 colors", 256), ("128 colors", 128),
 # the sweet spots ezgif-style tools use across its 0..200 range.
 GIF_LOSSY_OPTIONS = [("Off", None), ("Light", 30), ("Medium", 80),
                      ("Strong", 140)]
+# Output height cap for loops (never upscales). File size grows with the
+# square of this, so full-resolution GIFs get huge; 480p is plenty for chat.
+GIF_SIZE_OPTIONS = [("Max 480p", 480), ("Max 360p", 360), ("Max 240p", 240),
+                    ("Max 720p", 720), ("Keep original", None)]
 GIF_OUT_EXT = {"gif": ".gif", "webp": ".webp", "mp4": "_loop.mp4"}
 
 # Rotation/flip for phone videos recorded sideways. Values are ffmpeg filters.

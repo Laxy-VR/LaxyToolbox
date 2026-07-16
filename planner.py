@@ -210,6 +210,13 @@ def estimate_output_bytes(info, mode, settings, size_mb=None,
         return None  # too content dependent to be worth a number
 
     if mode == MODE_GIF:
+        # Loops size from their own height cap, not the Compress tab's
+        # Resolution menu; the cap never upscales a smaller source.
+        gh = settings.get("gif_height")
+        if gh and info.height and gh < info.height:
+            w, h = round(info.width * gh / info.height), gh
+        else:
+            w, h = info.width, info.height
         if not (w and h and info.duration >= 0):
             return None
         try:

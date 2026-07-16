@@ -12,7 +12,7 @@ from models import (APP_NAME, APP_VERSION, TAB_COMPRESS, TAB_GIF, TAB_IMAGE,
                     PRESET_PLACEHOLDER, CODEC_OPTIONS, HW_OPTIONS,
                     GIF_DITHER_OPTIONS, GIF_FORMAT_OPTIONS, GIF_SPEED_OPTIONS,
                     GIF_DIRECTION_OPTIONS, GIF_COLORS_OPTIONS,
-                    GIF_LOSSY_OPTIONS, ROTATE_OPTIONS,
+                    GIF_LOSSY_OPTIONS, GIF_SIZE_OPTIONS, ROTATE_OPTIONS,
                     SUBS_NONE, SUBS_AUTO, SUBS_PICK, IMG_FORMAT_OPTIONS,
                     IMG_QUALITY_OPTIONS, IMG_RESIZE_OPTIONS,
                     AUD_FORMAT_OPTIONS, AUD_QUALITY_OPTIONS, PARTS_OPTIONS,
@@ -277,6 +277,12 @@ class BuildMixin:
         self.gif_len.pack(side="left", padx=(8, 0))
         ctk.CTkLabel(row0, text="s or mm:ss", text_color=theme.TEXT_MUTED).pack(
             side="left", padx=(6, 0))
+        ctk.CTkLabel(row0, text="Size").pack(side="left", padx=(14, 0))
+        self.gif_size_menu = ctk.CTkOptionMenu(
+            row0, width=120, values=[s[0] for s in GIF_SIZE_OPTIONS],
+            command=self._on_setting_changed)
+        self.gif_size_menu.set(GIF_SIZE_OPTIONS[0][0])
+        self.gif_size_menu.pack(side="left", padx=(8, 0))
         row1 = ctk.CTkFrame(gif_left, fg_color="transparent")
         row1.pack(anchor="w", pady=(8, 0))
         ctk.CTkLabel(row1, text="Dithering").pack(side="left")
@@ -554,6 +560,9 @@ class BuildMixin:
                                    "file just skips the still parts.",
             self.gif_speed_menu: "Play the clip faster or slower. 2x halves the "
                                  "length, which also halves the file size.",
+            self.gif_size_menu: "Output height (width follows). File size grows "
+                                "with the square of this, so 480p is plenty for "
+                                "chat. Never upscales a smaller source.",
             self.rotate_menu: "Fix a phone video recorded sideways, or mirror "
                               "the picture.",
             self.subs_menu: "Burn subtitles permanently into the picture. Auto "

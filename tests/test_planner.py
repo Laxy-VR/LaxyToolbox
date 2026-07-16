@@ -239,6 +239,22 @@ def test_estimate_gif_formats_ordered():
     assert gif > webp > 0 and mp4 > 0 and mp4 < gif
 
 
+def test_estimate_gif_uses_its_own_height_cap():
+    s = settings(gif_start=0, gif_len=5, gif_speed=1.0, gif_direction="forward")
+    full = estimate_output_bytes(_info(), MODE_GIF, s)
+    small = estimate_output_bytes(_info(), MODE_GIF, dict(s, gif_height=480))
+    # 1080p -> 480p is (480/1080)^2 of the pixels
+    assert small == pytest.approx(full * (480 / 1080) ** 2, rel=0.01)
+    # a cap above the source never inflates the estimate
+    same = estimate_output_bytes(_info(height=360, width=640), MODE_GIF, s)
+    capped = estimate_output_bytes(_info(height=360, width=640), MODE_GIF,
+                                   dict(s, gif_height=480))
+    assert capped == pytest.approx(same)
+    # and the Compress tab's Resolution setting is ignored for loops
+    leak = estimate_output_bytes(_info(), MODE_GIF, dict(s, target_height=240))
+    assert leak == pytest.approx(full)
+
+
 def test_estimate_audio_and_image():
     est = estimate_output_bytes(_info(), MODE_AUDIO,
                                 settings(aud_bitrate="192k"))

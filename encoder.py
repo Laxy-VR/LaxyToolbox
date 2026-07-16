@@ -247,8 +247,16 @@ def build_gif_stages(input_path: str, output_path: str, settings: dict, segment=
     if speed != 1.0:
         chain.append(f"setpts=PTS/{speed}")
     chain.append(f"fps={fps}")
-    if settings.get("target_height"):
-        chain.append(f"scale=-2:{settings['target_height']}:flags=lanczos")
+    gif_height = settings.get("gif_height")
+    if gif_height:
+        # Cap the height, never upscale (min with ih). The MP4 loop encodes
+        # yuv420p, which needs even dimensions; GIF/WebP take any size.
+        if fmt == "mp4":
+            chain.append(f"scale=-2:trunc(min({gif_height}\\,ih)/2)*2:flags=lanczos")
+        else:
+            chain.append(f"scale=-2:min({gif_height}\\,ih):flags=lanczos")
+    elif fmt == "mp4":  # keep original size, but still round to even for yuv420p
+        chain.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
     if settings.get("gif_dedupe"):
         # Drop near-identical frames AFTER the fps normalisation (fps would
         # just re-duplicate them). GIF/WebP store per-frame delays, so the

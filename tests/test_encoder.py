@@ -159,11 +159,37 @@ def test_segment_trims_input_not_output():
 
 def test_gif_command():
     cmd = joined(build_gif_stages("in.mp4", "out.gif",
-                                  {"target_fps": 15, "target_height": 480}))[0]
+                                  {"target_fps": 15, "gif_height": 480}))[0]
     assert "palettegen" in cmd and "paletteuse" in cmd
     assert "stats_mode=diff" in cmd and "diff_mode=rectangle" in cmd
     assert "fps=15" in cmd and "-loop 0" in cmd
     assert cmd.strip().endswith("out.gif")
+
+
+def test_gif_size_caps_height_never_upscales():
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_height": 480}))[0]
+    assert "scale=-2:min(480\\,ih):flags=lanczos" in cmd
+    # no size chosen: no scale filter at all ("scale" alone would also match
+    # the default bayer_scale dither, so check the filter form)
+    cmd = joined(build_gif_stages("in.mp4", "out.gif", {"target_fps": 15}))[0]
+    assert "scale=-2:" not in cmd
+    # the Compress tab's Resolution must no longer leak into loops
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "target_height": 1080}))[0]
+    assert "scale=-2:" not in cmd
+
+
+def test_gif_mp4_loop_dimensions_stay_even():
+    """libx264 yuv420p rejects odd dimensions, so the MP4 loop must round
+    them to even both with a size cap and without one."""
+    cmd = joined(build_gif_stages("in.mp4", "out_loop.mp4",
+                                  {"target_fps": 15, "gif_format": "mp4",
+                                   "gif_height": 480}))[0]
+    assert "scale=-2:trunc(min(480\\,ih)/2)*2:flags=lanczos" in cmd
+    cmd = joined(build_gif_stages("in.mp4", "out_loop.mp4",
+                                  {"target_fps": 15, "gif_format": "mp4"}))[0]
+    assert "scale=trunc(iw/2)*2:trunc(ih/2)*2" in cmd
 
 
 def test_gif_dither_option():

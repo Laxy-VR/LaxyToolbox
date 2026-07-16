@@ -206,9 +206,15 @@ class NotesMixin:
         if clip is None:
             return "Enter a clip start and length in seconds."
         start, length = clip
-        w, h, _ = self._effective_res_fps(info)
-        fps = dict(FPS_OPTIONS)[self.fps_menu.get()] or 15
         settings = self._collect_settings()
+        # Loops size from their own height cap (never upscaling), not the
+        # Compress tab's Resolution menu.
+        gh = settings.get("gif_height")
+        if gh and info.height and gh < info.height:
+            w, h = round(info.width * gh / info.height), gh
+        else:
+            w, h = info.width, info.height
+        fps = dict(FPS_OPTIONS)[self.fps_menu.get()] or 15
         settings["gif_start"], settings["gif_len"] = start, length
         fmt = settings["gif_format"]
         out_len = gif_output_duration(length, settings)
