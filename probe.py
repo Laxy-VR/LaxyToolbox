@@ -93,11 +93,13 @@ def nvenc_works() -> bool:
         return False
 
 
-def extract_frame_png(path: str, seconds: float, max_width: int = 320) -> bytes | None:
-    """Grab one frame at `seconds` as PNG bytes (for preview thumbnails)."""
+def extract_frame_png(path: str, seconds: float, max_width: int | None = 320) -> bytes | None:
+    """Grab one frame at `seconds` as PNG bytes (for preview thumbnails).
+    `max_width=None` keeps the source resolution (for saving real stills)."""
+    scale = ["-vf", f"scale={max_width}:-1"] if max_width else []
     cmd = [FFMPEG, "-ss", f"{max(seconds, 0):.3f}", "-i", path,
-           "-frames:v", "1", "-vf", f"scale={max_width}:-1",
-           "-f", "image2pipe", "-vcodec", "png", "-"]
+           "-frames:v", "1"] + scale + \
+          ["-f", "image2pipe", "-vcodec", "png", "-"]
     try:
         r = subprocess.run(cmd, capture_output=True, creationflags=NO_WINDOW,
                            timeout=10)

@@ -43,6 +43,48 @@ def terminate_children(timeout: float = 3.0) -> None:
             pass
 
 
+def copy_files_to_clipboard(paths) -> bool:
+    """Put real files on the Windows clipboard (CF_HDROP), so Ctrl+V pastes
+    the file itself into Discord, Explorer, and most chat apps."""
+    paths = [os.path.abspath(p) for p in paths if p and os.path.exists(p)]
+    if sys.platform != "win32" or not paths:
+        return False
+    import ctypes
+    import struct
+    kernel32, user32 = ctypes.windll.kernel32, ctypes.windll.user32
+    # Handles are pointer sized; the ctypes default int return would truncate
+    # them on 64 bit Python.
+    kernel32.GlobalAlloc.restype = ctypes.c_void_p
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
+    user32.SetClipboardData.restype = ctypes.c_void_p
+    user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+
+    # DROPFILES header (20 bytes): file list offset, drop point (unused),
+    # fNC, fWide=1 (UTF-16 names), then a double NUL terminated name list.
+    names = ("\0".join(paths) + "\0\0").encode("utf-16-le")
+    payload = struct.pack("<IiiII", 20, 0, 0, 0, 1) + names
+    hglobal = kernel32.GlobalAlloc(0x0002, len(payload))  # GMEM_MOVEABLE
+    if not hglobal:
+        return False
+    ptr = kernel32.GlobalLock(hglobal)
+    ctypes.memmove(ptr, payload, len(payload))
+    kernel32.GlobalUnlock(hglobal)
+    if not user32.OpenClipboard(None):
+        kernel32.GlobalFree(hglobal)
+        return False
+    try:
+        user32.EmptyClipboard()
+        if not user32.SetClipboardData(15, hglobal):  # CF_HDROP
+            kernel32.GlobalFree(hglobal)
+            return False
+    finally:
+        user32.CloseClipboard()
+    return True
+
+
 def set_keep_awake(on: bool):
     """Stop Windows from sleeping while a long encode runs (no-op elsewhere).
 

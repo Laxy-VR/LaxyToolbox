@@ -9,8 +9,10 @@ import threading
 import tkinter as tk
 from tkinter import filedialog
 
-from models import MEDIA_EXTS, Job, is_audio, is_image, human_size
+from models import (MEDIA_EXTS, Job, is_audio, is_image, human_size,
+                    parse_time)
 from probe import probe_video
+from sysutil import copy_files_to_clipboard
 from widgets import QueueRow
 
 
@@ -325,6 +327,49 @@ class QueueMixin:
         job.row.render(selected=(job.id == self.selected_id))
         self._update_counts()
 
+    def _copy_to_clipboard(self, paths):
+        if copy_files_to_clipboard(paths):
+            what = "File" if len(paths) == 1 else f"{len(paths)} files"
+            self.status.configure(
+                text=f"{what} copied · paste with Ctrl+V into Discord, "
+                     "Explorer, or most chat apps.")
+        else:
+            self.status.configure(text="Could not copy the file to the clipboard.")
+
+    def _save_frame(self, job):
+        """Grab one full-resolution frame of a video as a PNG next to it."""
+        import customtkinter as ctk
+        from probe import extract_frame_png
+        dur = job.info.duration if job.info else 0
+        dialog = ctk.CTkInputDialog(
+            title="Save a frame",
+            text=f"Time of the frame (seconds or mm:ss).\n"
+                 f"The video is {dur:.1f}s long.")
+        raw = (dialog.get_input() or "").strip()
+        if not raw:
+            return
+        seconds = parse_time(raw)
+        if seconds is None or (dur and seconds > dur):
+            self.status.configure(text="That time isn't inside the video.")
+            return
+        png = extract_frame_png(job.path, seconds, max_width=None)
+        if not png:
+            self.status.configure(text="Could not read a frame at that time.")
+            return
+        stem = os.path.splitext(job.path)[0]
+        out = f"{stem}_frame_{seconds:g}s.png"
+        n = 2
+        while os.path.exists(out):  # never overwrite an earlier grab
+            out = f"{stem}_frame_{seconds:g}s_{n}.png"
+            n += 1
+        try:
+            with open(out, "wb") as f:
+                f.write(png)
+        except OSError as e:
+            self.status.configure(text=f"Could not save the frame: {e}")
+            return
+        self.status.configure(text=f"Frame saved · {os.path.basename(out)}")
+
     def _context_menu(self, job, event):
         self._select_job(job)
         menu = tk.Menu(self, tearoff=0)
@@ -333,13 +378,22 @@ class QueueMixin:
             menu.add_command(label="Open", command=lambda: self._reveal(outs[0]))
             menu.add_command(label="Reveal in folder",
                              command=lambda: self._reveal_select(outs[0]))
+            menu.add_command(label="Copy file" if len(outs) == 1 else "Copy files",
+                             command=lambda: self._copy_to_clipboard(outs))
             menu.add_separator()
         elif job.status == "downloaded":
             menu.add_command(label="Open", command=lambda: self._reveal(job.path))
             menu.add_command(label="Reveal in folder",
                              command=lambda: self._reveal_select(job.path))
+            menu.add_command(label="Copy file",
+                             command=lambda: self._copy_to_clipboard([job.path]))
             menu.add_command(label="Queue for compression",
                              command=lambda: self._requeue_download(job))
+            menu.add_separator()
+        if job.info and not is_image(job.path) and not is_audio(job.path) \
+                and os.path.exists(job.path):
+            menu.add_command(label="Save a frame…",
+                             command=lambda: self._save_frame(job))
             menu.add_separator()
         # Reorder (only when the queue isn't locked by a run in progress).
         if self.start_btn.cget("state") != "disabled" and len(self.jobs) > 1:
