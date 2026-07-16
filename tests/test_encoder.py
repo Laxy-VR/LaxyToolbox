@@ -72,6 +72,29 @@ def test_quality_vbv_cap_for_roomy_targets():
     assert "-maxrate" not in cmd  # plain quality mode stays uncapped
 
 
+def test_crop_filters():
+    """Crop runs first in the chain (before tonemap/rotate/scale) and the
+    ratio crops keep even dimensions for yuv420."""
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(crop_filter="crop=1920:800:0:140",
+                                    target_height=720), "quality"))[0]
+    assert "crop=1920:800:0:140,scale=-2:720" in cmd
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(crop="9:16"),
+                              "quality"))[0]
+    assert "crop=min(iw\\,trunc(ih*9/16/2)*2):ih" in cmd
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(crop="1:1"),
+                              "quality"))[0]
+    assert "crop=trunc(min(iw\\,ih)/2)*2:trunc(min(iw\\,ih)/2)*2" in cmd
+    # a detected per-file crop wins over the ratio choice
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(crop="auto", crop_filter="crop=1280:690:0:15"),
+                              "quality"))[0]
+    assert "crop=1280:690:0:15" in cmd and "9/16" not in cmd
+    # no crop settings: no crop filter
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(), "quality"))[0]
+    assert "crop=" not in cmd
+
+
 def test_audio_boost_normalizes_and_reencodes():
     """Boost quiet audio: loudness normalisation needs a re-encode, so the
     boost mode carries its own AAC encode instead of stream copy."""

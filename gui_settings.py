@@ -12,7 +12,7 @@ from models import (TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD,
                     GIF_SPEED_OPTIONS, GIF_DIRECTION_OPTIONS,
                     GIF_COLORS_OPTIONS, GIF_LOSSY_OPTIONS, GIF_SIZE_OPTIONS,
                     GIF_SIZE_CUSTOM,
-                    ROTATE_OPTIONS, SUBS_NONE, SUBS_AUTO,
+                    ROTATE_OPTIONS, CROP_OPTIONS, SUBS_NONE, SUBS_AUTO,
                     SUBS_PICK, IMG_FORMAT_OPTIONS, IMG_QUALITY_OPTIONS,
                     IMG_RESIZE_OPTIONS, AUD_FORMAT_OPTIONS,
                     AUD_QUALITY_OPTIONS, RESOLUTIONS, FPS_OPTIONS,
@@ -143,7 +143,8 @@ class SettingsMixin:
         separately: it stays visible on the GIF tab where it matters most)."""
         return [self.preset_menu, self.preset_menu_label,
                 self.rotate_menu, self.rotate_menu_label,
-                self.subs_menu, self.subs_menu_label]
+                self.subs_menu, self.subs_menu_label,
+                self.crop_menu, self.crop_menu_label]
 
     def _toggle_advanced(self):
         self._advanced_open = not self._advanced_open
@@ -237,6 +238,7 @@ class SettingsMixin:
             "audio_mode": audio_mode,
             "audio_bitrate": audio_bitrate or "128k",
             "rotate": dict(ROTATE_OPTIONS)[self.rotate_menu.get()],
+            "crop": dict(CROP_OPTIONS)[self.crop_menu.get()],
             "subs_mode": subs_mode,
             "subs_path": subs_path,
             "gif_dither": dict(GIF_DITHER_OPTIONS)[self.dither_menu.get()],
@@ -297,6 +299,7 @@ class SettingsMixin:
         self.fps_menu.configure(state="disabled" if cut else "normal")
         self.rotate_menu.configure(state="disabled" if cut else "normal")
         self.subs_menu.configure(state="disabled" if cut else "normal")
+        self.crop_menu.configure(state="disabled" if cut else "normal")
         self.mode_seg.configure(state="disabled" if cut else "normal")
 
     def _apply_recommended(self, rec):

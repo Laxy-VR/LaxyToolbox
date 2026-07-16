@@ -204,6 +204,34 @@ def test_plan_job_burns_matching_subtitles(tmp_path):
     assert "subtitles=" not in " ".join(stages[0][1])
 
 
+def test_auto_crop_applies_when_bars_are_real(monkeypatch):
+    import planner
+    monkeypatch.setattr(planner, "detect_crop", lambda p, d: (1920, 800, 0, 140))
+    stages, _p, reason = plan_job(make_job(), MODE_QUALITY,
+                                  settings(crop="auto"), None)
+    assert reason is None
+    assert "crop=1920:800:0:140" in " ".join(stages[0][1])
+
+
+def test_auto_crop_rejects_suspect_detections(monkeypatch):
+    import planner
+    # nearly the full frame (bars under 8 px): not worth a crop
+    monkeypatch.setattr(planner, "detect_crop", lambda p, d: (1916, 1076, 2, 2))
+    stages, _p, _r = plan_job(make_job(), MODE_QUALITY,
+                              settings(crop="auto"), None)
+    assert "crop=" not in " ".join(stages[0][1])
+    # a tiny area (dark scene fooled the detector): keep the frame whole
+    monkeypatch.setattr(planner, "detect_crop", lambda p, d: (320, 180, 800, 450))
+    stages, _p, _r = plan_job(make_job(), MODE_QUALITY,
+                              settings(crop="auto"), None)
+    assert "crop=" not in " ".join(stages[0][1])
+    # detection failed entirely: encode proceeds uncropped
+    monkeypatch.setattr(planner, "detect_crop", lambda p, d: None)
+    stages, _p, reason = plan_job(make_job(), MODE_QUALITY,
+                                  settings(crop="auto"), None)
+    assert reason is None and "crop=" not in " ".join(stages[0][1])
+
+
 # ---------- output size estimates ----------
 def _info(**kw):
     d = dict(width=1920, height=1080, duration=60.0, fps=30.0)
@@ -271,6 +299,17 @@ def test_gif_output_dims():
                                         "gif_height": 480}) == (400, 300)
     assert gif_output_dims(1920, 1080, {"gif_custom": (None, None),
                                         "gif_height": 480}) == (853, 480)
+
+
+def test_estimate_ratio_crops_shrink_the_frame():
+    full = estimate_output_bytes(_info(), MODE_QUALITY, settings())
+    vertical = estimate_output_bytes(_info(), MODE_QUALITY,
+                                     settings(crop="9:16"))
+    square = estimate_output_bytes(_info(), MODE_QUALITY, settings(crop="1:1"))
+    assert 0 < vertical < square < full
+    # auto is unknown until encode time; the estimate stays whole-frame
+    auto = estimate_output_bytes(_info(), MODE_QUALITY, settings(crop="auto"))
+    assert auto == pytest.approx(full)
 
 
 def test_estimate_audio_and_image():

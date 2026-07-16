@@ -37,6 +37,14 @@ def _video_filters(settings: dict) -> str:
     stay crisp at the final output resolution.
     """
     parts = []
+    # Crop first: it applies to the source picture (auto detection measured
+    # the source) and cuts the pixels every later filter has to process.
+    if settings.get("crop_filter"):      # per-file "crop=w:h:x:y" from auto
+        parts.append(settings["crop_filter"])
+    elif settings.get("crop") == "9:16":  # centered vertical window (Shorts)
+        parts.append("crop=min(iw\\,trunc(ih*9/16/2)*2):ih")
+    elif settings.get("crop") == "1:1":   # centered square, even for yuv420
+        parts.append("crop=trunc(min(iw\\,ih)/2)*2:trunc(min(iw\\,ih)/2)*2")
     if _needs_tonemap(settings):
         parts.append(TONEMAP)
     if settings.get("rotate"):

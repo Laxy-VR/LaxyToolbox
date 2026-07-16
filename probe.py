@@ -108,6 +108,31 @@ def extract_frame_png(path: str, seconds: float, max_width: int | None = 320) ->
         return None
 
 
+def detect_crop(path: str, duration: float = 0.0):
+    """Find the active picture area (letterbox/pillarbox bars cut off).
+    Returns (w, h, x, y) or None. Samples two spots and keeps the LARGEST
+    detected area, so one dark scene can't fake bars that aren't there."""
+    import re
+    dur = duration or 0
+    spots = [dur * 0.25, dur * 0.65] if dur > 4 else [0.0]
+    best = None
+    for ss in spots:
+        cmd = [FFMPEG, "-ss", f"{max(ss, 0):.1f}", "-t", "3", "-i", path,
+               "-vf", "cropdetect=limit=24:round=2", "-f", "null", "-"]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               creationflags=NO_WINDOW, timeout=30)
+        except Exception:  # noqa: BLE001 - detection is best-effort
+            continue
+        found = re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", r.stderr or "")
+        if not found:
+            continue
+        w, h, x, y = map(int, found[-1])  # last line = stabilised result
+        if w > 0 and h > 0 and (best is None or w * h > best[0] * best[1]):
+            best = (w, h, x, y)
+    return best
+
+
 @dataclass
 class VideoInfo:
     path: str

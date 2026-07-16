@@ -50,6 +50,33 @@ def test_probe_reads_generated_clip(clip):
     assert info.video_codec == "h264" and info.audio_codec == "aac"
 
 
+def test_detect_crop_finds_letterbox(tmp_path):
+    """A clip with real black bars top and bottom must come back with the
+    active area, and a bar-free clip must not produce a crop."""
+    from probe import detect_crop
+    boxed = str(tmp_path / "boxed.mp4")
+    cmd = [FFMPEG, "-y",
+           "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=2",
+           "-vf", "pad=320:240:0:30",  # 30 px bars top and bottom
+           "-c:v", "libx264", "-preset", "ultrafast", boxed]
+    subprocess.run(cmd, capture_output=True, check=True)
+    c = detect_crop(boxed, 2.0)
+    assert c is not None
+    w, h, _x, y = c
+    assert w == 320 and abs(h - 180) <= 4 and abs(y - 30) <= 4
+
+    clean = str(tmp_path / "clean.mp4")
+    cmd = [FFMPEG, "-y",
+           "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=2",
+           "-c:v", "libx264", "-preset", "ultrafast", clean]
+    subprocess.run(cmd, capture_output=True, check=True)
+    c = detect_crop(clean, 2.0)
+    # full frame (or nearly): the planner's guards would skip the crop
+    if c is not None:
+        w, h, _x, _y = c
+        assert w >= 320 - 4 and h >= 240 - 4
+
+
 def test_h265_encode_end_to_end(clip):
     out = os.path.join(os.path.dirname(clip), "out_h265.mp4")
     for _label, cmd in build_stages(clip, out, _settings(), "quality"):

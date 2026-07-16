@@ -13,6 +13,7 @@ from models import (APP_NAME, APP_VERSION, TAB_COMPRESS, TAB_GIF, TAB_IMAGE,
                     GIF_DITHER_OPTIONS, GIF_FORMAT_OPTIONS, GIF_SPEED_OPTIONS,
                     GIF_DIRECTION_OPTIONS, GIF_COLORS_OPTIONS,
                     GIF_LOSSY_OPTIONS, GIF_SIZE_OPTIONS, ROTATE_OPTIONS,
+                    CROP_OPTIONS,
                     SUBS_NONE, SUBS_AUTO, SUBS_PICK, IMG_FORMAT_OPTIONS,
                     IMG_QUALITY_OPTIONS, IMG_RESIZE_OPTIONS,
                     AUD_FORMAT_OPTIONS, AUD_QUALITY_OPTIONS, PARTS_OPTIONS,
@@ -477,10 +478,12 @@ class BuildMixin:
         self._subs_path = None
         self._menu_row(card, 10, 2, "Subtitles", [SUBS_NONE, SUBS_AUTO, SUBS_PICK],
                        SUBS_NONE, "subs_menu", self._on_subs_change)
+        self._menu_row(card, 11, 0, "Crop", [c[0] for c in CROP_OPTIONS],
+                       CROP_OPTIONS[0][0], "crop_menu", self._on_setting_changed)
 
         # Optional trim (Compress tab only): encode just start..end seconds
         self.trim_frame = ctk.CTkFrame(card, fg_color="transparent")
-        self.trim_frame.grid(row=11, column=0, columnspan=4, sticky="w",
+        self.trim_frame.grid(row=12, column=0, columnspan=4, sticky="w",
                              padx=14, pady=(2, 0))
         trim_left = ctk.CTkFrame(self.trim_frame, fg_color="transparent")
         trim_left.grid(row=0, column=0, sticky="nw")
@@ -522,7 +525,7 @@ class BuildMixin:
         self.note_label = ctk.CTkLabel(card, text="", anchor="w", justify="left",
                                        wraplength=620, text_color=theme.NOTE,
                                        font=self.f("sans", 12))
-        self.note_label.grid(row=12, column=0, columnspan=4, sticky="w",
+        self.note_label.grid(row=13, column=0, columnspan=4, sticky="w",
                              padx=14, pady=(4, 12))
 
         # Output folder
@@ -589,6 +592,10 @@ class BuildMixin:
                                 "leave width or height blank to keep the shape.",
             self.rotate_menu: "Fix a phone video recorded sideways, or mirror "
                               "the picture.",
+            self.crop_menu: "Remove black bars measures each file and cuts the "
+                            "bars off automatically. Vertical 9:16 crops the "
+                            "center for Shorts/TikTok; Square 1:1 for "
+                            "thumbnails. Crops are centered.",
             self.subs_menu: "Burn subtitles permanently into the picture. Auto "
                             "uses a subtitle file with the same name as each "
                             "video (clip.srt next to clip.mp4).",

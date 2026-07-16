@@ -15,7 +15,7 @@ from encoder import (build_stages, build_gif_stages, build_image_stages,
                      suggest_parts)
 from models import (MODE_QUALITY, MODE_TARGET, MODE_SPLIT, MODE_GIF,
                     MODE_IMAGE, MODE_AUDIO, SUB_EXTS)
-from probe import estimate_h265_bitrate_kbps
+from probe import estimate_h265_bitrate_kbps, detect_crop
 
 
 def trimmed_duration(duration, trim):
@@ -112,6 +112,19 @@ def plan_job(job, mode, base_settings, size_mb):
     # Re-encoding modes can burn in subtitles; resolved per file here so
     # "auto" finds each video's own matching subtitle in a batch.
     settings["subtitles"] = resolve_subtitles(settings, job.path)
+
+    # "Remove black bars" measures each file at plan time (worker thread).
+    # Only act on a believable result: a real bar (over 4 px on a side) and
+    # an area that is still most of the frame, so one dark sample can't
+    # crop a video down to nothing.
+    if settings.get("crop") == "auto" and job.info.width and job.info.height:
+        c = detect_crop(job.path, dur)
+        if c:
+            w, h, x, y = c
+            real_bars = (w <= job.info.width - 8 or h <= job.info.height - 8)
+            believable = w * h >= 0.25 * job.info.width * job.info.height
+            if real_bars and believable:
+                settings["crop_filter"] = f"crop={w}:{h}:{x}:{y}"
 
     if mode == MODE_QUALITY:
         stages = [(lbl, cmd, dur_eff) for lbl, cmd
@@ -216,6 +229,13 @@ def estimate_output_bytes(info, mode, settings, size_mb=None,
     has no sensible prediction (images) or the inputs are unusable."""
     dur_eff = trimmed_duration(info.duration, settings.get("trim"))
     w, h, fps = _effective_res_fps(info, settings)
+    # Fixed-ratio crops shrink the frame the encoder actually sees. "auto"
+    # is unknown until encode time, and bars are nearly free to encode, so
+    # its estimate is left alone.
+    if settings.get("crop") == "9:16":
+        w = min(w, round(h * 9 / 16))
+    elif settings.get("crop") == "1:1":
+        w = h = min(w, h)
 
     if mode == MODE_AUDIO:
         if info.duration <= 0:

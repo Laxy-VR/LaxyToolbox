@@ -92,6 +92,13 @@ GIF_SIZE_OPTIONS = [("Max 480p", 480), ("Max 360p", 360), ("Max 240p", 240),
                     ("Custom…", GIF_SIZE_CUSTOM)]
 GIF_OUT_EXT = {"gif": ".gif", "webp": ".webp", "mp4": "_loop.mp4"}
 
+# Crop the picture. "auto" detects each file's black bars at encode time;
+# the ratio crops cut a centered window (for Shorts/TikTok or thumbnails).
+CROP_OPTIONS = [("No crop", None),
+                ("Remove black bars", "auto"),
+                ("Vertical 9:16 (Shorts)", "9:16"),
+                ("Square 1:1", "1:1")]
+
 # Rotation/flip for phone videos recorded sideways. Values are ffmpeg filters.
 ROTATE_OPTIONS = [("No rotation", None),
                   ("Rotate 90° right", "transpose=1"),

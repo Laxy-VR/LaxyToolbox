@@ -44,6 +44,7 @@ class ConfigMixin:
         set_menu(self.fps_menu, "fps")
         set_menu(self.parts_menu, "parts")
         set_menu(self.rotate_menu, "rotate")
+        set_menu(self.crop_menu, "crop")
         set_menu(self.dither_menu, "dither")
         set_menu(self.gif_format_menu, "gif_format")
         set_menu(self.gif_speed_menu, "gif_speed")
@@ -106,6 +107,7 @@ class ConfigMixin:
             "outdir": self.outdir_entry.get().strip(),
             "codec": self.codec_menu.get(),
             "rotate": self.rotate_menu.get(),
+            "crop": self.crop_menu.get(),
             "dither": self.dither_menu.get(),
             "gif_format": self.gif_format_menu.get(),
             "gif_speed": self.gif_speed_menu.get(),
@@ -158,7 +160,7 @@ class ConfigMixin:
             "preset": self.preset_menu.get(), "resolution": self.res_menu.get(),
             "fps": self.fps_menu.get(), "parts": self.parts_menu.get(),
             "audio": self.audio_menu.get(), "dither": self.dither_menu.get(),
-            "rotate": self.rotate_menu.get(),
+            "rotate": self.rotate_menu.get(), "crop": self.crop_menu.get(),
             "gif_format": self.gif_format_menu.get(),
             "gif_speed": self.gif_speed_menu.get(),
             "gif_direction": self.gif_direction_menu.get(),
@@ -219,6 +221,7 @@ class ConfigMixin:
         menu(self.audio_menu, "audio")
         menu(self.dither_menu, "dither")
         menu(self.rotate_menu, "rotate")
+        menu(self.crop_menu, "crop")
         menu(self.gif_format_menu, "gif_format")
         menu(self.gif_speed_menu, "gif_speed")
         menu(self.gif_direction_menu, "gif_direction")
