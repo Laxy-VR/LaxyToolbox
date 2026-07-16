@@ -37,17 +37,21 @@ modes:
   encoded at best quality with the limit as a safety ceiling.
 - **Split to fit** cuts a long video into parts that each fit under the limit.
 
-Optional **Trim** (start/end seconds) on any mode, a **Cut only** checkbox for
-instant lossless trimming, **Rotate/flip** for sideways phone videos,
+Optional **Trim** (start/end seconds) on any mode with live previews of the
+first and last frame you're keeping, a **Cut only** checkbox for instant
+lossless trimming, **Crop** (auto **black bar removal**, vertical **9:16**
+for Shorts, square **1:1**), **Rotate/flip** for sideways phone videos,
 **burn in subtitles** (auto finds a matching .srt/.ass/.vtt next to each
-video, or pick a file), and a **Remove audio** option for gameplay clips.
+video, or pick a file), a **Boost quiet audio** option that fixes a too
+quiet mic while compressing, and **Remove audio** for gameplay clips.
 HDR videos keep their 10 bit color on H.265/AV1 and are properly tone mapped
 otherwise.
 
 **🎞 GIF** · Turn a clip into a loop: classic **GIF**, **animated WebP**
 (much smaller), or a silent **MP4 loop** (smallest). Scrub to the start frame
 with a slider and live previews of the clip's first and last frames, then
-tune speed (0.25x to 4x), direction (forward, reverse, **boomerang**),
+tune the **size** (height caps that never upscale, or custom exact pixel
+dimensions), speed (0.25x to 4x), direction (forward, reverse, **boomerang**),
 dithering, and palette size (256/128/64 colors). **Lossy compression**
 (gifsicle) squeezes GIFs another 30 to 60% at three strengths, and **Skip
 still frames** drops frames where nothing moved. Also shrinks existing GIFs.
@@ -71,7 +75,9 @@ one to queue it. DRM protected content is not supported.
 previews, a rough **predicted output size on every queued file** (and the
 batch total) before you start, live progress with speed, time remaining, and
 **real taskbar progress**, per file savings and batch totals, one-click
-**presets** for common jobs, plain-language tooltips, clear error messages
+**presets** for common jobs, right click a finished file to **copy it to the
+clipboard** (Ctrl+V straight into Discord) or **save a frame** as a full
+resolution PNG, plain-language tooltips, clear error messages
 (hover a failed row to see why), **drag rows to reorder** the queue,
 **two-handle range sliders** for trims and GIF clips with times accepted as
 seconds or mm:ss, an Advanced toggle that keeps the everyday controls up

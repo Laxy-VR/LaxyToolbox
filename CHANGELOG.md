@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.5.0 · 2026-07-16
+- **GIF size control**: a Size menu on the GIF tab caps the output height
+  (Max 480p by default, 240p to 720p, never upscales a smaller source), or
+  pick **Custom…** and type exact pixel width × height. Leave one side blank
+  to keep the shape; typed sizes may deliberately upscale (a 128×128 emote
+  from a small clip, for example). Loops no longer silently inherit the
+  Compress tab's Resolution setting.
+- **Copy file** in the queue's right click menu puts the finished output on
+  the clipboard as a real file, so Ctrl+V pastes it straight into Discord,
+  Explorer, and most chat apps.
+- **Save a frame** in the right click menu grabs a full resolution PNG at
+  any time you type (seconds or mm:ss), saved next to the source.
+- **Boost quiet audio**: a new choice in the Audio menu that lifts a too
+  quiet mic to a normal loudness while compressing.
+- **Trim previews**: the Compress trim now shows the first and last frame of
+  what you're keeping, updating live as you drag the slider or type times.
+- **Crop** (in Advanced): **Remove black bars** measures each file and cuts
+  the bars off automatically, **Vertical 9:16** crops the center for
+  Shorts/TikTok, **Square 1:1** for thumbnails.
+- The MP4 loop format no longer fails on odd sized sources (window captures).
+
 ## v1.4.2 · 2026-07-13
 - The window now opens wide enough for the GIF tab's preview thumbnails and
   new controls; the width is measured from the widest tab at startup instead
