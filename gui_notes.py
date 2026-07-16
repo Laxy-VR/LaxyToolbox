@@ -287,6 +287,7 @@ class NotesMixin:
             self._fill_entry(self.trim_start, lo)
             self._fill_entry(self.trim_end, hi)
         self._update_note()
+        self._schedule_gif_preview()
 
     def _sync_trim_range_from_entries(self):
         start = parse_time(self.trim_start.get()) or 0.0
@@ -296,6 +297,7 @@ class NotesMixin:
     def _on_trim_edited(self):
         self._sync_trim_range_from_entries()
         self._update_note()
+        self._schedule_gif_preview()
 
     def _schedule_gif_preview(self):
         """Debounce preview refreshes while the user is still typing/scrubbing."""
@@ -307,21 +309,35 @@ class NotesMixin:
         self._thumb_after = None
         mode = self._mode()
         job = self._selected_job()
-        if mode not in (MODE_GIF, MODE_IMAGE) or job is None or job.info is None:
+        if job is None or job.info is None or mode in (MODE_AUDIO, MODE_DOWNLOAD):
             return
         if mode == MODE_IMAGE:
             if is_image(job.path):
                 self._request_thumb(job.path, 0.0, self.img_preview)
             return
-        clip = self._gif_clip(job.info)
-        if clip is None:
+        if mode == MODE_GIF:
+            clip = self._gif_clip(job.info)
+            if clip is None:
+                return
+            start, length = clip
+            end = start + max(length - 0.05, 0)
+            if job.info.duration > 0:
+                end = min(end, max(job.info.duration - 0.05, 0))
+            self._request_thumb(job.path, start, self.gif_preview)
+            self._request_thumb(job.path, end, self.gif_preview_end)
             return
-        start, length = clip
-        end = start + max(length - 0.05, 0)
-        if job.info.duration > 0:
-            end = min(end, max(job.info.duration - 0.05, 0))
-        self._request_thumb(job.path, start, self.gif_preview)
-        self._request_thumb(job.path, end, self.gif_preview_end)
+        # Compress modes: the trim start/end frames, so you can see what
+        # you're cutting (whole file when no trim is set).
+        if is_image(job.path) or is_audio(job.path):
+            return
+        dur = job.info.duration or 0
+        start = (parse_time(self.trim_start.get())
+                 if self.trim_start.get().strip() else 0.0) or 0.0
+        end = parse_time(self.trim_end.get()) if self.trim_end.get().strip() else None
+        end = dur if end is None else min(end, dur)
+        self._request_thumb(job.path, min(start, max(dur - 0.05, 0)),
+                            self.trim_preview)
+        self._request_thumb(job.path, max(end - 0.05, 0), self.trim_preview_end)
 
     def _request_thumb(self, path, seconds, target):
         token = self._thumb_tokens.get(target, 0) + 1
@@ -341,7 +357,11 @@ class NotesMixin:
             import io
             from PIL import Image
             img = Image.open(io.BytesIO(png))
-            scale = min(160 / img.width, 90 / img.height)
+            # Fit the target label's own box (GIF previews are 160x90, the
+            # trim previews are smaller).
+            box_w = target.cget("width") or 160
+            box_h = target.cget("height") or 90
+            scale = min(box_w / img.width, box_h / img.height)
             size = (max(int(img.width * scale), 1), max(int(img.height * scale), 1))
             self._thumb_images[target] = ctk.CTkImage(light_image=img,
                                                       dark_image=img, size=size)

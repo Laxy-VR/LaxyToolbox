@@ -482,7 +482,9 @@ class BuildMixin:
         self.trim_frame = ctk.CTkFrame(card, fg_color="transparent")
         self.trim_frame.grid(row=11, column=0, columnspan=4, sticky="w",
                              padx=14, pady=(2, 0))
-        trow = ctk.CTkFrame(self.trim_frame, fg_color="transparent")
+        trim_left = ctk.CTkFrame(self.trim_frame, fg_color="transparent")
+        trim_left.grid(row=0, column=0, sticky="nw")
+        trow = ctk.CTkFrame(trim_left, fg_color="transparent")
         trow.pack(anchor="w")
         ctk.CTkLabel(trow, text="Trim").pack(side="left")
         self.trim_start = ctk.CTkEntry(trow, width=70,
@@ -500,9 +502,22 @@ class BuildMixin:
             trow, text="Cut only (no re-encode)",
             command=self._on_cut_only_toggle)
         self.cut_only_check.pack(side="left", padx=(20, 0))
-        self.trim_range = RangeSlider(self.trim_frame, width=480,
+        self.trim_range = RangeSlider(trim_left, width=480,
                                       command=self._on_trim_range)
         self.trim_range.pack(anchor="w", padx=(42, 0), pady=(4, 0))
+        # Small start/end frame previews so you can see what you're cutting.
+        tprev = ctk.CTkFrame(self.trim_frame, fg_color="transparent")
+        tprev.grid(row=0, column=1, sticky="n", padx=(14, 0))
+        self.trim_preview = ctk.CTkLabel(tprev, text="start",
+                                         text_color=theme.TEXT_MUTED,
+                                         width=110, height=62,
+                                         fg_color=theme.SURFACE2, corner_radius=8)
+        self.trim_preview.pack(side="left")
+        self.trim_preview_end = ctk.CTkLabel(tprev, text="end",
+                                             text_color=theme.TEXT_MUTED,
+                                             width=110, height=62,
+                                             fg_color=theme.SURFACE2, corner_radius=8)
+        self.trim_preview_end.pack(side="left", padx=(8, 0))
 
         self.note_label = ctk.CTkLabel(card, text="", anchor="w", justify="left",
                                        wraplength=620, text_color=theme.NOTE,
