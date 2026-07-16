@@ -255,6 +255,24 @@ def test_estimate_gif_uses_its_own_height_cap():
     assert leak == pytest.approx(full)
 
 
+def test_gif_output_dims():
+    from planner import gif_output_dims
+    # caps: shrink to fit, never upscale
+    assert gif_output_dims(1920, 1080, {"gif_height": 480}) == (853, 480)
+    assert gif_output_dims(640, 360, {"gif_height": 480}) == (640, 360)
+    assert gif_output_dims(1920, 1080, {}) == (1920, 1080)
+    # custom: exact, one blank side follows the aspect, and it MAY upscale
+    assert gif_output_dims(1920, 1080, {"gif_custom": (400, 300)}) == (400, 300)
+    assert gif_output_dims(1920, 1080, {"gif_custom": (400, None)}) == (400, 225)
+    assert gif_output_dims(1920, 1080, {"gif_custom": (None, 540)}) == (960, 540)
+    assert gif_output_dims(100, 100, {"gif_custom": (None, 128)}) == (128, 128)
+    # custom beats a leftover cap; blank custom falls through to the cap
+    assert gif_output_dims(1920, 1080, {"gif_custom": (400, 300),
+                                        "gif_height": 480}) == (400, 300)
+    assert gif_output_dims(1920, 1080, {"gif_custom": (None, None),
+                                        "gif_height": 480}) == (853, 480)
+
+
 def test_estimate_audio_and_image():
     est = estimate_output_bytes(_info(), MODE_AUDIO,
                                 settings(aud_bitrate="192k"))

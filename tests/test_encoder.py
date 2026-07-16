@@ -180,6 +180,40 @@ def test_gif_size_caps_height_never_upscales():
     assert "scale=-2:" not in cmd
 
 
+def test_gif_custom_dimensions_exact():
+    """Typed pixels are exact: both sides stretch if asked, one side follows
+    the aspect ratio, and custom (unlike the caps) may upscale."""
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_custom": (400, 300)}))[0]
+    assert "scale=400:300:flags=lanczos" in cmd
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_custom": (500, None)}))[0]
+    assert "scale=500:-1:flags=lanczos" in cmd
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_custom": (None, 128)}))[0]
+    assert "scale=-1:128:flags=lanczos" in cmd
+    # custom wins over a leftover height cap
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_custom": (400, None),
+                                   "gif_height": 480}))[0]
+    assert "scale=400:-1" in cmd and "min(480" not in cmd
+    # both blank behaves like no custom size at all
+    cmd = joined(build_gif_stages("in.mp4", "out.gif",
+                                  {"target_fps": 15, "gif_custom": (None, None)}))[0]
+    assert "scale=-2:" not in cmd and "scale=-1:" not in cmd
+
+
+def test_gif_custom_dimensions_mp4_rounds_even():
+    cmd = joined(build_gif_stages("in.mp4", "out_loop.mp4",
+                                  {"target_fps": 15, "gif_format": "mp4",
+                                   "gif_custom": (401, 301)}))[0]
+    assert "scale=400:300:flags=lanczos" in cmd
+    cmd = joined(build_gif_stages("in.mp4", "out_loop.mp4",
+                                  {"target_fps": 15, "gif_format": "mp4",
+                                   "gif_custom": (401, None)}))[0]
+    assert "scale=400:-2:flags=lanczos" in cmd
+
+
 def test_gif_mp4_loop_dimensions_stay_even():
     """libx264 yuv420p rejects odd dimensions, so the MP4 loop must round
     them to even both with a size cap and without one."""

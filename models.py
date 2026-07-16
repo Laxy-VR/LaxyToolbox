@@ -84,8 +84,12 @@ GIF_LOSSY_OPTIONS = [("Off", None), ("Light", 30), ("Medium", 80),
                      ("Strong", 140)]
 # Output height cap for loops (never upscales). File size grows with the
 # square of this, so full-resolution GIFs get huge; 480p is plenty for chat.
+# "Custom…" reveals exact width x height fields (those DO allow upscaling:
+# typed dimensions are deliberate, e.g. a 128x128 emote from a small source).
+GIF_SIZE_CUSTOM = "custom"
 GIF_SIZE_OPTIONS = [("Max 480p", 480), ("Max 360p", 360), ("Max 240p", 240),
-                    ("Max 720p", 720), ("Keep original", None)]
+                    ("Max 720p", 720), ("Keep original", None),
+                    ("Custom…", GIF_SIZE_CUSTOM)]
 GIF_OUT_EXT = {"gif": ".gif", "webp": ".webp", "mp4": "_loop.mp4"}
 
 # Rotation/flip for phone videos recorded sideways. Values are ffmpeg filters.

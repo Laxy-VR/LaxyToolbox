@@ -247,10 +247,20 @@ def build_gif_stages(input_path: str, output_path: str, settings: dict, segment=
     if speed != 1.0:
         chain.append(f"setpts=PTS/{speed}")
     chain.append(f"fps={fps}")
+    custom = settings.get("gif_custom") or (None, None)
     gif_height = settings.get("gif_height")
-    if gif_height:
-        # Cap the height, never upscale (min with ih). The MP4 loop encodes
-        # yuv420p, which needs even dimensions; GIF/WebP take any size.
+    if custom[0] or custom[1]:
+        # Exact typed dimensions. Unlike the height caps these DO upscale
+        # (typed numbers are deliberate, e.g. a 128x128 emote). A blank side
+        # follows the aspect ratio. The MP4 loop encodes yuv420p, which needs
+        # even dimensions; the values are literal, so round them here.
+        cw, ch = custom
+        if fmt == "mp4":
+            cw, ch = cw and max(cw - cw % 2, 2), ch and max(ch - ch % 2, 2)
+        auto = "-2" if fmt == "mp4" else "-1"
+        chain.append(f"scale={cw or auto}:{ch or auto}:flags=lanczos")
+    elif gif_height:
+        # Cap the height, never upscale (min with ih).
         if fmt == "mp4":
             chain.append(f"scale=-2:trunc(min({gif_height}\\,ih)/2)*2:flags=lanczos")
         else:

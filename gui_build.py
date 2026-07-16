@@ -280,9 +280,16 @@ class BuildMixin:
         ctk.CTkLabel(row0, text="Size").pack(side="left", padx=(14, 0))
         self.gif_size_menu = ctk.CTkOptionMenu(
             row0, width=120, values=[s[0] for s in GIF_SIZE_OPTIONS],
-            command=self._on_setting_changed)
+            command=self._on_gif_size_change)
         self.gif_size_menu.set(GIF_SIZE_OPTIONS[0][0])
         self.gif_size_menu.pack(side="left", padx=(8, 0))
+        # Exact pixel fields, revealed by the Custom… size choice. Leave one
+        # blank to keep the shape; fill both for exact (possibly stretched).
+        self.gif_w = ctk.CTkEntry(row0, width=52, placeholder_text="width")
+        self.gif_w.bind("<KeyRelease>", lambda _e: self._on_setting_changed())
+        self.gif_size_x = ctk.CTkLabel(row0, text="×", text_color=theme.TEXT_MUTED)
+        self.gif_h = ctk.CTkEntry(row0, width=52, placeholder_text="height")
+        self.gif_h.bind("<KeyRelease>", lambda _e: self._on_setting_changed())
         row1 = ctk.CTkFrame(gif_left, fg_color="transparent")
         row1.pack(anchor="w", pady=(8, 0))
         ctk.CTkLabel(row1, text="Dithering").pack(side="left")
@@ -560,9 +567,10 @@ class BuildMixin:
                                    "file just skips the still parts.",
             self.gif_speed_menu: "Play the clip faster or slower. 2x halves the "
                                  "length, which also halves the file size.",
-            self.gif_size_menu: "Output height (width follows). File size grows "
-                                "with the square of this, so 480p is plenty for "
-                                "chat. Never upscales a smaller source.",
+            self.gif_size_menu: "Output size. The Max choices cap the height "
+                                "(width follows, never upscales); 480p is plenty "
+                                "for chat. Custom lets you type exact pixels: "
+                                "leave width or height blank to keep the shape.",
             self.rotate_menu: "Fix a phone video recorded sideways, or mirror "
                               "the picture.",
             self.subs_menu: "Burn subtitles permanently into the picture. Auto "

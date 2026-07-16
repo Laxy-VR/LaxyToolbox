@@ -12,7 +12,7 @@ from models import (MODE_TARGET, MODE_SPLIT, MODE_GIF, MODE_IMAGE, MODE_AUDIO,
                     MODE_DOWNLOAD, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS,
                     PARTS_OPTIONS, IMG_FORMAT_OPTIONS, is_image, is_audio,
                     human_size, parse_time)
-from planner import estimate_output_bytes
+from planner import estimate_output_bytes, gif_output_dims
 from probe import VideoInfo, recommend_settings, estimate_h265_bitrate_kbps
 
 
@@ -207,13 +207,9 @@ class NotesMixin:
             return "Enter a clip start and length in seconds."
         start, length = clip
         settings = self._collect_settings()
-        # Loops size from their own height cap (never upscaling), not the
-        # Compress tab's Resolution menu.
-        gh = settings.get("gif_height")
-        if gh and info.height and gh < info.height:
-            w, h = round(info.width * gh / info.height), gh
-        else:
-            w, h = info.width, info.height
+        # Loops size from their own Size setting (cap or exact custom pixels),
+        # not the Compress tab's Resolution menu.
+        w, h = gif_output_dims(info.width, info.height, settings)
         fps = dict(FPS_OPTIONS)[self.fps_menu.get()] or 15
         settings["gif_start"], settings["gif_len"] = start, length
         fmt = settings["gif_format"]

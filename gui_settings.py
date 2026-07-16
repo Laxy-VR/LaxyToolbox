@@ -11,6 +11,7 @@ from models import (TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD,
                     HW_OPTIONS, GIF_DITHER_OPTIONS, GIF_FORMAT_OPTIONS,
                     GIF_SPEED_OPTIONS, GIF_DIRECTION_OPTIONS,
                     GIF_COLORS_OPTIONS, GIF_LOSSY_OPTIONS, GIF_SIZE_OPTIONS,
+                    GIF_SIZE_CUSTOM,
                     ROTATE_OPTIONS, SUBS_NONE, SUBS_AUTO,
                     SUBS_PICK, IMG_FORMAT_OPTIONS, IMG_QUALITY_OPTIONS,
                     IMG_RESIZE_OPTIONS, AUD_FORMAT_OPTIONS,
@@ -31,6 +32,29 @@ class SettingsMixin:
         self.gif_colors_menu.configure(state=state)
         self.gif_lossy_menu.configure(state=state)
         self._update_note()
+
+    def _on_gif_size_change(self, _value=None):
+        # The Custom… choice reveals exact width x height fields.
+        custom = dict(GIF_SIZE_OPTIONS)[self.gif_size_menu.get()] == GIF_SIZE_CUSTOM
+        if custom:
+            self.gif_w.pack(side="left", padx=(8, 0))
+            self.gif_size_x.pack(side="left", padx=(4, 0))
+            self.gif_h.pack(side="left", padx=(4, 0))
+        else:
+            for w in (self.gif_w, self.gif_size_x, self.gif_h):
+                w.pack_forget()
+        self._update_note()
+
+    def _gif_custom_dims(self):
+        """(width, height) typed into the Custom fields; a blank or invalid
+        side is None. Only meaningful when the size menu says Custom…"""
+        def px(entry):
+            try:
+                v = int(entry.get().strip())
+            except (TypeError, ValueError):
+                return None
+            return v if 8 <= v <= 8192 else None
+        return px(self.gif_w), px(self.gif_h)
 
     def _on_subs_change(self, value=None):
         if value == SUBS_PICK:
@@ -202,6 +226,7 @@ class SettingsMixin:
     def _collect_settings(self) -> dict:
         audio_mode, audio_bitrate = dict(AUDIO_OPTIONS)[self.audio_menu.get()]
         subs_mode, subs_path = self._subs_settings()
+        gif_size = dict(GIF_SIZE_OPTIONS)[self.gif_size_menu.get()]
         return {
             "codec": self._codec_value(),
             "encoder": self._hw_value(),  # "cpu" or "nvenc"
@@ -220,7 +245,9 @@ class SettingsMixin:
             "gif_direction": dict(GIF_DIRECTION_OPTIONS)[self.gif_direction_menu.get()],
             "gif_colors": dict(GIF_COLORS_OPTIONS)[self.gif_colors_menu.get()],
             "gif_lossy": dict(GIF_LOSSY_OPTIONS)[self.gif_lossy_menu.get()],
-            "gif_height": dict(GIF_SIZE_OPTIONS)[self.gif_size_menu.get()],
+            "gif_height": gif_size if gif_size != GIF_SIZE_CUSTOM else None,
+            "gif_custom": (self._gif_custom_dims()
+                           if gif_size == GIF_SIZE_CUSTOM else None),
             "gif_dedupe": bool(self.gif_dedupe_check.get()),
             "img_format": dict(IMG_FORMAT_OPTIONS)[self.img_format_menu.get()],
             "img_quality": dict(IMG_QUALITY_OPTIONS)[self.img_quality_menu.get()],

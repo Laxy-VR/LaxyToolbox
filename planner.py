@@ -175,6 +175,23 @@ def plan_job(job, mode, base_settings, size_mb):
     return stages, passlogs, None
 
 
+def gif_output_dims(src_w, src_h, settings):
+    """Output (w, h) of a loop, for estimates and notes. Exact custom
+    dimensions win (a blank side follows the aspect ratio, and typed numbers
+    may upscale); otherwise the height cap applies, which never upscales."""
+    cw, ch = settings.get("gif_custom") or (None, None)
+    if cw or ch:
+        if cw and ch:
+            return cw, ch
+        if cw:
+            return cw, (round(src_h * cw / src_w) if src_w else src_h)
+        return (round(src_w * ch / src_h) if src_h else src_w), ch
+    gh = settings.get("gif_height")
+    if gh and src_h and gh < src_h:
+        return round(src_w * gh / src_h), gh
+    return src_w, src_h
+
+
 def _effective_res_fps(info, settings):
     """Resolution/fps after the chosen downscale, for size estimates."""
     th = settings.get("target_height")
@@ -210,13 +227,9 @@ def estimate_output_bytes(info, mode, settings, size_mb=None,
         return None  # too content dependent to be worth a number
 
     if mode == MODE_GIF:
-        # Loops size from their own height cap, not the Compress tab's
-        # Resolution menu; the cap never upscales a smaller source.
-        gh = settings.get("gif_height")
-        if gh and info.height and gh < info.height:
-            w, h = round(info.width * gh / info.height), gh
-        else:
-            w, h = info.width, info.height
+        # Loops size from their own Size setting, not the Compress tab's
+        # Resolution menu.
+        w, h = gif_output_dims(info.width, info.height, settings)
         if not (w and h and info.duration >= 0):
             return None
         try:

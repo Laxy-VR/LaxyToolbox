@@ -51,6 +51,10 @@ class ConfigMixin:
         set_menu(self.gif_colors_menu, "gif_colors")
         set_menu(self.gif_lossy_menu, "gif_lossy")
         set_menu(self.gif_size_menu, "gif_size")
+        if cfg.get("gif_custom_w"):
+            self.gif_w.insert(0, str(cfg["gif_custom_w"]))
+        if cfg.get("gif_custom_h"):
+            self.gif_h.insert(0, str(cfg["gif_custom_h"]))
         if cfg.get("gif_dedupe"):
             self.gif_dedupe_check.select()
         set_menu(self.img_format_menu, "img_format")
@@ -85,6 +89,7 @@ class ConfigMixin:
             self._refresh_preset_menu()
         self._on_codec_change()
         self._on_gif_format_change()  # sync dither/colors enabled state
+        self._on_gif_size_change()    # show the custom fields if restored
         self._refresh_mode()
         if self._advanced_open:  # restored open: make sure nothing clips
             self._fit_window_height()
@@ -108,6 +113,8 @@ class ConfigMixin:
             "gif_colors": self.gif_colors_menu.get(),
             "gif_lossy": self.gif_lossy_menu.get(),
             "gif_size": self.gif_size_menu.get(),
+            "gif_custom_w": self.gif_w.get().strip(),
+            "gif_custom_h": self.gif_h.get().strip(),
             "gif_dedupe": bool(self.gif_dedupe_check.get()),
             "img_format": self.img_format_menu.get(),
             "img_quality": self.img_quality_menu.get(),
@@ -158,6 +165,8 @@ class ConfigMixin:
             "gif_colors": self.gif_colors_menu.get(),
             "gif_lossy": self.gif_lossy_menu.get(),
             "gif_size": self.gif_size_menu.get(),
+            "gif_custom_w": self.gif_w.get().strip(),
+            "gif_custom_h": self.gif_h.get().strip(),
             "gif_dedupe": bool(self.gif_dedupe_check.get()),
             "img_strip": bool(self.img_strip_check.get()),
             "aud_normalize": bool(self.aud_normalize_check.get()),
@@ -216,6 +225,8 @@ class ConfigMixin:
         menu(self.gif_colors_menu, "gif_colors")
         menu(self.gif_lossy_menu, "gif_lossy")
         menu(self.gif_size_menu, "gif_size")
+        entry(self.gif_w, "gif_custom_w")
+        entry(self.gif_h, "gif_custom_h")
         check(self.gif_dedupe_check, "gif_dedupe")
         check(self.img_strip_check, "img_strip")
         check(self.aud_normalize_check, "aud_normalize")
@@ -238,6 +249,7 @@ class ConfigMixin:
             self._on_crf(int(d["crf"]))
         self._on_codec_change()
         self._on_gif_format_change()
+        self._on_gif_size_change()
         self._refresh_mode()
 
     def _on_preset_selected(self, name):
