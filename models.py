@@ -129,6 +129,7 @@ FPS_OPTIONS = [("Keep original", None), ("60", 60), ("30", 30), ("24", 24),
                ("15", 15), ("10", 10)]
 AUDIO_OPTIONS = [("Copy (no re-encode)", ("copy", None)), ("AAC 192k", ("aac", "192k")),
                  ("AAC 128k", ("aac", "128k")), ("AAC 96k", ("aac", "96k")),
+                 ("Boost quiet audio", ("boost", "192k")),
                  ("Remove audio", ("none", None))]
 
 VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".wmv",

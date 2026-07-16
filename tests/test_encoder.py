@@ -72,6 +72,20 @@ def test_quality_vbv_cap_for_roomy_targets():
     assert "-maxrate" not in cmd  # plain quality mode stays uncapped
 
 
+def test_audio_boost_normalizes_and_reencodes():
+    """Boost quiet audio: loudness normalisation needs a re-encode, so the
+    boost mode carries its own AAC encode instead of stream copy."""
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(audio_mode="boost", audio_bitrate="192k"),
+                              "quality"))[0]
+    assert "loudnorm=I=-16:TP=-1.5:LRA=11" in cmd
+    assert "-c:a aac" in cmd and "-b:a 192k" in cmd and "-ar 48000" in cmd
+    assert "-c:a copy" not in cmd
+    # plain copy stays untouched, no loudnorm
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(), "quality"))[0]
+    assert "loudnorm" not in cmd and "-c:a copy" in cmd
+
+
 def test_quality_x265_command():
     cmd = joined(build_stages("in.mp4", "out.mp4", _base(), "quality"))[0]
     assert "-c:v libx265" in cmd and "-crf 22" in cmd

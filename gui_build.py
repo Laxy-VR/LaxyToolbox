@@ -538,8 +538,9 @@ class BuildMixin:
                              "~28 is small.",
             self.preset_menu: "Encoding speed. Slower squeezes the file a little "
                               "smaller at the same quality, but takes longer.",
-            self.audio_menu: "Copy keeps the original audio untouched. Remove "
-                             "audio strips the sound (handy for gameplay clips).",
+            self.audio_menu: "Copy keeps the original audio untouched. Boost "
+                             "quiet audio brings a too-quiet mic up to a normal "
+                             "level. Remove audio strips the sound entirely.",
             self.res_menu: "Downscale the video. Keep original unless you want a "
                            "smaller frame size.",
             self.dl_cookies_menu: "If a site only gives low quality or needs a "

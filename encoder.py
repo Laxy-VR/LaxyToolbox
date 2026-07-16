@@ -53,6 +53,12 @@ def _video_filters(settings: dict) -> str:
 def _audio_args(settings: dict) -> list[str]:
     if settings["audio_mode"] == "none":
         return ["-an"]  # strip the audio track entirely
+    if settings["audio_mode"] == "boost":
+        # EBU R128 loudness normalisation lifts quiet audio (gameplay mics) to
+        # a standard level; same filter as the Audio tab's Normalize. loudnorm
+        # resamples to 192 kHz internally, so pin a sane output rate.
+        return ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000",
+                "-c:a", "aac", "-b:a", str(settings.get("audio_bitrate") or "192k")]
     if settings["audio_mode"] == "copy":
         return ["-c:a", "copy"]
     return ["-c:a", "aac", "-b:a", str(settings["audio_bitrate"])]
