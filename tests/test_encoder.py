@@ -6,7 +6,7 @@ import pytest
 
 from encoder import (video_bitrate_for_target, suggest_parts, build_stages,
                      build_gif_stages, build_image_stages, build_audio_stages,
-                     _time_to_seconds)
+                     _time_to_seconds, AUD_ENCODERS)
 
 
 def joined(stages):
@@ -606,3 +606,13 @@ def test_audio_track_ignored_when_removing_audio():
                               _base(audio_track=1, audio_mode="none"),
                               "quality"))[0]
     assert "-map" not in cmd and "-an" in cmd
+
+
+def test_audio_opus_in_ogg():
+    """Opus encodes with libopus into .ogg (the extension players and
+    Discord's inline player actually recognise)."""
+    assert AUD_ENCODERS["opus"] == ("libopus", ".ogg")
+    cmd = joined(build_audio_stages("in.mp4", "out.ogg",
+                                    {"aud_format": "opus",
+                                     "aud_bitrate": "128k"}))[0]
+    assert "libopus" in cmd and "-b:a 128k" in cmd and "-vn" in cmd

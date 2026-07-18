@@ -67,7 +67,8 @@ accident, and a **strip metadata** option that removes EXIF/GPS before
 sharing.
 
 **🎵 Audio** · Extract the soundtrack from any video, or convert audio files,
-to MP3 or M4A, with optional **volume normalization** for quiet or harsh
+to MP3, M4A, or **Opus** (smallest at the same quality, plays in Discord and
+every browser), with optional **volume normalization** for quiet or harsh
 recordings.
 
 **🌐 Download** · Paste a link from YouTube, Twitter, and most sites. Pick a

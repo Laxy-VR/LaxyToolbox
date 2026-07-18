@@ -28,7 +28,8 @@ MODE_AUDIO = "Extract audio"    # internal effective mode for the Audio tab
 MODE_DOWNLOAD = "Download"      # internal effective mode for the Download tab
 
 AUD_FORMAT_OPTIONS = [("MP3 (plays everywhere)", "mp3"),
-                      ("M4A (smaller, modern)", "m4a")]
+                      ("M4A (smaller, modern)", "m4a"),
+                      ("Opus (smallest, modern)", "opus")]
 AUD_QUALITY_OPTIONS = [("High (256k)", "256k"), ("Balanced (192k)", "192k"),
                        ("Small (128k)", "128k")]
 

@@ -416,7 +416,10 @@ def build_cut_stages(input_path: str, output_path: str, segment):
     return [("cut", cmd)]
 
 
-AUD_ENCODERS = {"mp3": ("libmp3lame", ".mp3"), "m4a": ("aac", ".m4a")}
+# Opus goes in an .ogg container: same format, but the extension far more
+# players (and Discord's inline player) recognise than .opus.
+AUD_ENCODERS = {"mp3": ("libmp3lame", ".mp3"), "m4a": ("aac", ".m4a"),
+                "opus": ("libopus", ".ogg")}
 
 
 def build_audio_stages(input_path: str, output_path: str, settings: dict):

@@ -19,6 +19,8 @@
 - **Automatic deinterlacing**: interlaced sources (old TV captures, some
   camcorders) are detected during analysis and deinterlaced before
   encoding, on every tab including GIF. No setting needed.
+- **Opus on the Audio tab**: noticeably smaller than MP3 or M4A at the same
+  quality, and plays natively in Discord and every browser. Saved as .ogg.
 
 ## v1.5.0 · 2026-07-16
 - **GIF size control**: a Size menu on the GIF tab caps the output height
