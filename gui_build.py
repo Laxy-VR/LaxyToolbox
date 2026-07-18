@@ -111,14 +111,16 @@ class BuildMixin:
         self._build_middle(self._middle, queue_height=90)
 
     def _widest_tab_reqwidth(self) -> int:
-        """Required window width measured with the widest tab (GIF: three
-        control rows plus the preview column) shown. The startup sizing uses
-        this so no tab ever clips its right edge at the default size."""
+        """Required window width measured across EVERY tab. The startup
+        sizing uses this so no tab ever clips its right edge at the default
+        size, without hardcoding which tab happens to be widest today."""
         current = self.tab_seg.get()
-        self.tab_seg.set(TAB_GIF)
-        self._refresh_mode()
-        self.update_idletasks()
-        width = self.winfo_reqwidth()
+        width = 0
+        for tab in self.tab_seg.cget("values"):
+            self.tab_seg.set(tab)
+            self._refresh_mode()
+            self.update_idletasks()
+            width = max(width, self.winfo_reqwidth())
         self.tab_seg.set(current)
         self._refresh_mode()
         self.update_idletasks()
@@ -363,6 +365,8 @@ class BuildMixin:
         self.image_frame = ctk.CTkFrame(card, fg_color="transparent")
         img_left = ctk.CTkFrame(self.image_frame, fg_color="transparent")
         img_left.grid(row=0, column=0, sticky="nw")
+        # Two menu columns keep the card wide and short (the window's height
+        # is set by the tallest tab, so vertical space is the scarce one).
         img_rows = [
             ("Format", [o[0] for o in IMG_FORMAT_OPTIONS],
              IMG_FORMAT_OPTIONS[0][0], "img_format_menu"),
@@ -375,19 +379,21 @@ class BuildMixin:
             ("Rotate", [o[0] for o in ROTATE_OPTIONS],
              ROTATE_OPTIONS[0][0], "img_rotate_menu"),
         ]
-        for irow, (label, values, default, attr) in enumerate(img_rows):
+        for i, (label, values, default, attr) in enumerate(img_rows):
+            row, col = i // 2, (i % 2) * 2
             ctk.CTkLabel(img_left, text=label, width=60, anchor="w").grid(
-                row=irow, column=0, sticky="w", pady=3)
-            menu = ctk.CTkOptionMenu(img_left, width=230, values=values,
+                row=row, column=col, sticky="w", padx=(0 if col == 0 else 18, 0),
+                pady=3)
+            menu = ctk.CTkOptionMenu(img_left, width=210, values=values,
                                      command=self._on_setting_changed)
             menu.set(default)
-            menu.grid(row=irow, column=1, sticky="w", padx=(8, 0), pady=3)
+            menu.grid(row=row, column=col + 1, sticky="w", padx=(8, 0), pady=3)
             setattr(self, attr, menu)
         self.img_strip_check = ctk.CTkCheckBox(
             img_left, text="Strip metadata (EXIF, GPS)",
             command=self._on_setting_changed)
-        self.img_strip_check.grid(row=len(img_rows), column=0, columnspan=2,
-                                  sticky="w", pady=(6, 0))
+        self.img_strip_check.grid(row=(len(img_rows) + 1) // 2, column=2,
+                                  columnspan=2, sticky="w", padx=(26, 0), pady=3)
         self.img_preview = ctk.CTkLabel(self.image_frame, text="preview",
                                         text_color=theme.TEXT_MUTED,
                                         width=160, height=90, fg_color=theme.SURFACE2,
@@ -424,46 +430,38 @@ class BuildMixin:
         self.dl_playlist_check = ctk.CTkCheckBox(dltoggles, text="Whole playlist")
         self.dl_playlist_check.pack(side="left", padx=(24, 0))
 
-        # Audio conversion controls (shown only on the Audio tab)
+        # Audio conversion controls (shown only on the Audio tab), in two
+        # menu columns for the same short-and-wide reason as the Images tab.
         self.audio_frame = ctk.CTkFrame(card, fg_color="transparent")
-        ctk.CTkLabel(self.audio_frame, text="Format", width=60, anchor="w").grid(
-            row=0, column=0, sticky="w", pady=3)
-        self.aud_format_menu = ctk.CTkOptionMenu(
-            self.audio_frame, width=230, values=[o[0] for o in AUD_FORMAT_OPTIONS],
-            command=self._on_setting_changed)
-        self.aud_format_menu.set(AUD_FORMAT_OPTIONS[0][0])
-        self.aud_format_menu.grid(row=0, column=1, sticky="w", padx=(8, 0), pady=3)
-        ctk.CTkLabel(self.audio_frame, text="Quality", width=60, anchor="w").grid(
-            row=1, column=0, sticky="w", pady=3)
-        self.aud_quality_menu = ctk.CTkOptionMenu(
-            self.audio_frame, width=230, values=[o[0] for o in AUD_QUALITY_OPTIONS],
-            command=self._on_setting_changed)
-        self.aud_quality_menu.set(AUD_QUALITY_OPTIONS[1][0])
-        self.aud_quality_menu.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=3)
-        ctk.CTkLabel(self.audio_frame, text="Speed", width=60, anchor="w").grid(
-            row=2, column=0, sticky="w", pady=3)
-        self.aud_speed_menu = ctk.CTkOptionMenu(
-            self.audio_frame, width=230, values=[s[0] for s in SPEED_OPTIONS],
-            command=self._on_setting_changed)
-        self.aud_speed_menu.set(SPEED_OPTIONS[0][0])
-        self.aud_speed_menu.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=3)
+        aud_rows = [
+            ("Format", [o[0] for o in AUD_FORMAT_OPTIONS],
+             AUD_FORMAT_OPTIONS[0][0], "aud_format_menu"),
+            ("Quality", [o[0] for o in AUD_QUALITY_OPTIONS],
+             AUD_QUALITY_OPTIONS[1][0], "aud_quality_menu"),
+            ("Speed", [s[0] for s in SPEED_OPTIONS],
+             SPEED_OPTIONS[0][0], "aud_speed_menu"),
+            ("Track", [t[0] for t in AUDIO_TRACK_OPTIONS],
+             AUDIO_TRACK_OPTIONS[0][0], "aud_track_menu"),
+        ]
+        for i, (label, values, default, attr) in enumerate(aud_rows):
+            row, col = i // 2, (i % 2) * 2
+            lbl = ctk.CTkLabel(self.audio_frame, text=label, width=60, anchor="w")
+            lbl.grid(row=row, column=col, sticky="w",
+                     padx=(0 if col == 0 else 18, 0), pady=3)
+            menu = ctk.CTkOptionMenu(self.audio_frame, width=220, values=values,
+                                     command=self._on_setting_changed)
+            menu.set(default)
+            menu.grid(row=row, column=col + 1, sticky="w", padx=(8, 0), pady=3)
+            setattr(self, attr, menu)
+            setattr(self, attr.replace("_menu", "_label"), lbl)
         # Track choice: hidden until a queued file has more than one audio
         # track (same rule as the Compress tab's Audio track menu).
-        self.aud_track_label = ctk.CTkLabel(self.audio_frame, text="Track",
-                                            width=60, anchor="w")
-        self.aud_track_label.grid(row=3, column=0, sticky="w", pady=3)
-        self.aud_track_menu = ctk.CTkOptionMenu(
-            self.audio_frame, width=230,
-            values=[t[0] for t in AUDIO_TRACK_OPTIONS],
-            command=self._on_setting_changed)
-        self.aud_track_menu.set(AUDIO_TRACK_OPTIONS[0][0])
-        self.aud_track_menu.grid(row=3, column=1, sticky="w", padx=(8, 0), pady=3)
         self.aud_track_label.grid_remove()
         self.aud_track_menu.grid_remove()
         self.aud_normalize_check = ctk.CTkCheckBox(
             self.audio_frame, text="Normalize volume",
             command=self._on_setting_changed)
-        self.aud_normalize_check.grid(row=4, column=0, columnspan=2, sticky="w",
+        self.aud_normalize_check.grid(row=2, column=0, columnspan=2, sticky="w",
                                       pady=(6, 0))
 
         # Codec + hardware selectors, side by side. The hardware menu only
