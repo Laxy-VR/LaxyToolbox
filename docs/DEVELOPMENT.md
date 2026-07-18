@@ -13,6 +13,7 @@ workflow.
 | `gui_queue.py` | The file queue: add/drop/remove/reorder, selection, the details line, probing, opening results in Explorer. |
 | `gui_downloads.py` | The Download tab: clipboard prefill, starting yt-dlp jobs, turning finished downloads into rows. |
 | `gui_notes.py` | The advisory layer: per-mode notes, per-row output size estimates, GIF/image preview thumbnails and the scrubber. |
+| `gui_edits.py` | Per-file edits from the queue's right click menu: the trim dialog (range slider + frame previews) and the crop box dialog (drag a rectangle on a real frame). Results live on the Job (`job.trim`, `job.crop`) and win over the shared settings at plan time. |
 | `gui_settings.py` | Settings state: which controls each tab/mode shows, greying rules, and snapshotting widgets into a settings dict. |
 | `gui_run.py` | Running a batch: validation, output planning, the encode worker, progress, the message pump, GPU/update probes. |
 | `gui_config.py` | Persistence: the config file and named setting presets. |
@@ -54,7 +55,7 @@ modules and report back through `App.msg_queue` (see Threading model).
 
 ### The mixin split
 
-`App` is one class assembled from seven mixins, one per concern. Every method
+`App` is one class assembled from eight mixins, one per concern. Every method
 still lives on the same object (`self.crf_slider` works from any file), so
 there is no plumbing between modules; the split is purely for navigability.
 When adding a method, put it in the mixin whose docstring matches; if none
@@ -80,8 +81,12 @@ scaling), rebuilds the middle inside a `CTkScrollableFrame`
 (`_make_middle_scrollable`).
 
 Window sizing is **measured, never hardcoded**: height comes from the tallest
-tab (Compress) and width from the widest (`_widest_tab_reqwidth`, the GIF tab
-with its preview column). Opening the Advanced section grows the window if
+tab (Compress) and width from `_widest_tab_reqwidth`, which measures EVERY
+tab and takes the maximum (it used to assume the GIF tab was widest, which
+stopped being reliable once the other tabs grew wide two column layouts).
+Tab frames prefer growing wide over tall: the window's height is set by the
+tallest tab, so vertical space is the scarce one. Opening Advanced grows the
+window if
 needed (`_fit_window_height`); it never shrinks a user dragged size. If a new
 control clips at the default size, the measurement is what to fix, not a
 pixel constant.

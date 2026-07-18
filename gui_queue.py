@@ -1,5 +1,6 @@
-"""The file queue: adding files/folders/drops, removing and reordering rows,
-selection, the details line, probing, and opening results in Explorer.
+"""The file queue: adding files (dialogs, drag and drop, Ctrl+V paste),
+removing and reordering rows, selection, the details line, probing, the
+right click menu, and opening results in Explorer.
 
 Shared state contract: the owner of self.jobs mutation (add, remove, reorder)
 and self.selected_id; every other mixin only reads them. Probe results come
