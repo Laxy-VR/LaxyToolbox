@@ -435,17 +435,25 @@ class QueueMixin:
             menu.add_command(label="Queue for compression",
                              command=lambda: self._requeue_download(job))
             menu.add_separator()
+        editable = (job.info is not None and os.path.exists(job.path)
+                    and self.start_btn.cget("state") != "disabled")
+        section = False
+        if editable and not is_image(job.path):  # video or audio: trim
+            menu.add_command(
+                label="Trim this file…" + ("  ✂" if job.trim else ""),
+                command=lambda: self._trim_dialog(job))
+            section = True
+        if editable and not is_audio(job.path):  # video or image: crop box
+            menu.add_command(
+                label="Crop this file…" + ("  ◱" if job.crop else ""),
+                command=lambda: self._crop_dialog(job))
+            section = True
         if job.info and not is_image(job.path) and not is_audio(job.path) \
                 and os.path.exists(job.path):
-            if self.start_btn.cget("state") != "disabled":
-                menu.add_command(
-                    label="Trim this file…" + ("  ✂" if job.trim else ""),
-                    command=lambda: self._trim_dialog(job))
-                menu.add_command(
-                    label="Crop this file…" + ("  ◱" if job.crop else ""),
-                    command=lambda: self._crop_dialog(job))
             menu.add_command(label="Save a frame…",
                              command=lambda: self._save_frame(job))
+            section = True
+        if section:
             menu.add_separator()
         # Reorder (only when the queue isn't locked by a run in progress).
         if self.start_btn.cget("state") != "disabled" and len(self.jobs) > 1:

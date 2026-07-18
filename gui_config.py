@@ -70,8 +70,12 @@ class ConfigMixin:
         set_menu(self.img_format_menu, "img_format")
         set_menu(self.img_quality_menu, "img_quality")
         set_menu(self.img_resize_menu, "img_resize")
+        set_menu(self.img_max_menu, "img_max")
+        set_menu(self.img_rotate_menu, "img_rotate")
         set_menu(self.aud_format_menu, "aud_format")
         set_menu(self.aud_quality_menu, "aud_quality")
+        set_menu(self.aud_speed_menu, "aud_speed")
+        set_menu(self.aud_track_menu, "aud_track")
         set_menu(self.dl_res_menu, "dl_resolution")
         set_menu(self.dl_cookies_menu, "dl_cookies")
         if cfg.get("dl_audio"):
@@ -133,9 +137,13 @@ class ConfigMixin:
             "img_format": self.img_format_menu.get(),
             "img_quality": self.img_quality_menu.get(),
             "img_resize": self.img_resize_menu.get(),
+            "img_max": self.img_max_menu.get(),
+            "img_rotate": self.img_rotate_menu.get(),
             "img_strip": bool(self.img_strip_check.get()),
             "aud_format": self.aud_format_menu.get(),
             "aud_quality": self.aud_quality_menu.get(),
+            "aud_speed": self.aud_speed_menu.get(),
+            "aud_track": self.aud_track_menu.get(),
             "aud_normalize": bool(self.aud_normalize_check.get()),
             "dl_resolution": self.dl_res_menu.get(),
             "dl_cookies": self.dl_cookies_menu.get(),
@@ -190,8 +198,12 @@ class ConfigMixin:
             "img_format": self.img_format_menu.get(),
             "img_quality": self.img_quality_menu.get(),
             "img_resize": self.img_resize_menu.get(),
+            "img_max": self.img_max_menu.get(),
+            "img_rotate": self.img_rotate_menu.get(),
             "aud_format": self.aud_format_menu.get(),
             "aud_quality": self.aud_quality_menu.get(),
+            "aud_speed": self.aud_speed_menu.get(),
+            "aud_track": self.aud_track_menu.get(),
             "dl_resolution": self.dl_res_menu.get(),
             "dl_cookies": self.dl_cookies_menu.get(),
             "dl_audio": bool(self.dl_audio_check.get()),
@@ -254,8 +266,12 @@ class ConfigMixin:
         menu(self.img_format_menu, "img_format")
         menu(self.img_quality_menu, "img_quality")
         menu(self.img_resize_menu, "img_resize")
+        menu(self.img_max_menu, "img_max")
+        menu(self.img_rotate_menu, "img_rotate")
         menu(self.aud_format_menu, "aud_format")
         menu(self.aud_quality_menu, "aud_quality")
+        menu(self.aud_speed_menu, "aud_speed")
+        menu(self.aud_track_menu, "aud_track")
         menu(self.dl_res_menu, "dl_resolution")
         menu(self.dl_cookies_menu, "dl_cookies")
         check(self.dl_audio_check, "dl_audio")

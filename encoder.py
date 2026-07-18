@@ -455,61 +455,160 @@ def build_cut_stages(input_path: str, output_path: str, segment):
 # Opus goes in an .ogg container: same format, but the extension far more
 # players (and Discord's inline player) recognise than .opus.
 AUD_ENCODERS = {"mp3": ("libmp3lame", ".mp3"), "m4a": ("aac", ".m4a"),
-                "opus": ("libopus", ".ogg")}
+                "opus": ("libopus", ".ogg"),
+                "flac": ("flac", ".flac"), "wav": ("pcm_s16le", ".wav")}
+
+# Container for "Copy original": one that holds the source codec as-is.
+# Matroska audio (.mka) is the fallback that can hold anything.
+_AUD_COPY_EXT = {"aac": ".m4a", "alac": ".m4a", "mp3": ".mp3",
+                 "opus": ".ogg", "vorbis": ".ogg", "flac": ".flac"}
 
 
-def build_audio_stages(input_path: str, output_path: str, settings: dict):
-    """One command extracting/converting the audio track to MP3 or M4A."""
-    enc, _ = AUD_ENCODERS[settings.get("aud_format", "mp3")]
-    bitrate = settings.get("aud_bitrate", "192k")
-    filt = []
+def audio_copy_ext(codec) -> str:
+    """Output extension for a lossless audio copy of `codec`."""
+    if codec and str(codec).startswith("pcm_"):
+        return ".wav"
+    return _AUD_COPY_EXT.get(codec or "", ".mka")
+
+
+def build_audio_stages(input_path: str, output_path: str, settings: dict,
+                       segment=None):
+    """One command extracting/converting the audio track.
+
+    "copy" remuxes the source stream untouched (instant, zero quality loss);
+    the rest re-encode, optionally with a track choice or mix (aud_track),
+    a speed change (atempo), and loudness normalisation. `segment` trims to
+    (start, dur) seconds, input side like the video paths.
+    """
+    fmt = settings.get("aud_format", "mp3")
+    base = [FFMPEG, "-y"]
+    if segment:
+        base += ["-ss", f"{segment[0]:.3f}", "-t", f"{segment[1]:.3f}"]
+    base += ["-i", input_path, "-vn"]
+
+    track = settings.get("aud_track")
+    n = int(settings.get("audio_track_count") or 0)
+    mix = track == "mix" and n >= 2 and fmt != "copy"
+    maps = ["-map", f"0:a:{int(track)}?"] \
+        if track not in (None, "mix") else []
+
+    if fmt == "copy":  # remux as-is; filters would force a re-encode
+        cmd = base + maps + ["-c:a", "copy"] + PROGRESS + [output_path]
+        return [("audio", cmd)]
+
+    chain = []
+    if mix:
+        chain.append("".join(f"[0:a:{i}]" for i in range(n))
+                     + f"amix=inputs={n}:duration=longest")
+    chain += _atempo_chain(float(settings.get("aud_speed") or 1.0))
     if settings.get("aud_normalize"):
         # EBU R128 loudness normalisation; loudnorm resamples to 192 kHz
         # internally, so pin a sane output rate.
-        filt = ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000"]
-    cmd = [FFMPEG, "-y", "-i", input_path, "-vn"] + filt + \
-        ["-c:a", enc, "-b:a", str(bitrate)] + PROGRESS + [output_path]
+        chain.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+
+    enc, _ = AUD_ENCODERS[fmt]
+    aargs = ["-c:a", enc]
+    if fmt in ("mp3", "m4a", "opus"):
+        aargs += ["-b:a", str(settings.get("aud_bitrate", "192k"))]
+    if settings.get("aud_normalize"):
+        aargs = ["-ar", "48000"] + aargs
+
+    if mix:  # the amix graph needs -filter_complex and an explicit map
+        cmd = base + ["-filter_complex", ",".join(chain) + "[aout]",
+                      "-map", "[aout]"] + aargs + PROGRESS + [output_path]
+    elif chain:
+        cmd = base + maps + ["-af", ",".join(chain)] + aargs \
+            + PROGRESS + [output_path]
+    else:
+        cmd = base + maps + aargs + PROGRESS + [output_path]
     return [("audio", cmd)]
 
 
 # Per-format quality values for the three image quality levels. WebP uses
 # 0..100 (higher = better); AVIF uses AV1 CRF (lower = better); JPEG uses
-# mjpeg's q scale 2..31 (lower = better).
+# mjpeg's q scale 2..31 (lower = better). PNG is lossless (no quality knob).
 IMG_QUALITY = {
     "webp": {"high": 92, "balanced": 80, "small": 62},
     "avif": {"high": 22, "balanced": 30, "small": 38},
     "jpeg": {"high": 3, "balanced": 6, "small": 10},
+    "png":  {"high": 0, "balanced": 0, "small": 0},
 }
-IMG_EXT = {"webp": ".webp", "avif": ".avif", "jpeg": ".jpg"}
+IMG_EXT = {"webp": ".webp", "avif": ".avif", "jpeg": ".jpg", "png": ".png"}
+
+# Quality ladders for the image size cap, best to worst. The retry walks
+# down from the user's chosen quality, then starts shrinking the picture.
+IMG_LADDER = {
+    "webp": [92, 80, 62, 45, 30, 20],
+    "avif": [22, 30, 38, 46, 54, 62],
+    "jpeg": [3, 6, 10, 15, 22, 31],
+    "png": [],
+}
+_SHRINK_STEPS = [0.85, 0.7, 0.55, 0.4, 0.3]
+
+
+def image_attempts(settings: dict) -> list:
+    """Settings dicts to try in order until the output fits img_max_kb.
+
+    Each attempt pins an explicit quality (img_q_value) and an optional
+    extra downscale (img_shrink). The first attempt is the user's own
+    choice, so with a roomy cap nothing changes at all.
+    """
+    fmt = settings.get("img_format", "webp")
+    start_q = IMG_QUALITY[fmt][settings.get("img_quality", "balanced")]
+    ladder = IMG_LADDER[fmt]
+    better_is_lower = fmt in ("avif", "jpeg")
+    worse = [q for q in ladder
+             if (q > start_q if better_is_lower else q < start_q)]
+    qualities = [start_q] + worse
+    floor = qualities[-1]
+    attempts = [dict(settings, img_q_value=q, img_shrink=None)
+                for q in qualities]
+    attempts += [dict(settings, img_q_value=floor, img_shrink=f)
+                 for f in _SHRINK_STEPS]
+    return attempts
 
 
 def _image_vf(settings: dict) -> str:
-    """Scale filter for image resize. AVIF encodes as yuv420, which requires
-    even dimensions, so its sizes are always rounded down to even."""
+    """Filter chain for stills: optional per-file crop box, rotate, resize,
+    and the size-cap shrink. AVIF encodes as yuv420, which requires even
+    dimensions, so its sizes are always rounded down to even."""
     even = settings.get("img_format", "webp") == "avif"
+    parts = []
+    if settings.get("crop_filter"):  # the per-file crop box, source pixels
+        parts.append(settings["crop_filter"])
+    if settings.get("img_rotate"):
+        parts.append(settings["img_rotate"])
     resize = settings.get("img_resize")
     if resize and resize[0] == "mul":
         f = resize[1]
-        return f"scale=trunc(iw*{f}/2)*2:trunc(ih*{f}/2)*2:flags=lanczos"
-    if resize and resize[0] == "h":  # cap height, never upscale (min with ih)
+        parts.append(f"scale=trunc(iw*{f}/2)*2:trunc(ih*{f}/2)*2:flags=lanczos")
+    elif resize and resize[0] == "h":  # cap height, never upscale
         h = resize[1]
         if even:
-            return f"scale=-2:trunc(min({h}\\,ih)/2)*2:flags=lanczos"
-        return f"scale=-2:min({h}\\,ih):flags=lanczos"
-    if even:
-        return "scale=trunc(iw/2)*2:trunc(ih/2)*2"
-    return ""
+            parts.append(f"scale=-2:trunc(min({h}\\,ih)/2)*2:flags=lanczos")
+        else:
+            parts.append(f"scale=-2:min({h}\\,ih):flags=lanczos")
+    shrink = settings.get("img_shrink")
+    if shrink:  # extra size-cap downscale, applied after any chosen resize
+        parts.append(f"scale=trunc(iw*{shrink}/2)*2:trunc(ih*{shrink}/2)*2"
+                     ":flags=lanczos")
+    if even and not any("scale" in p for p in parts):
+        parts.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
+    return ",".join(parts)
 
 
 def build_image_stages(input_path: str, output_path: str, settings: dict):
-    """One command converting a still image to WebP / AVIF / JPEG."""
+    """One command converting a still image to WebP / AVIF / JPEG / PNG."""
     fmt = settings.get("img_format", "webp")
-    q = IMG_QUALITY[fmt][settings.get("img_quality", "balanced")]
+    q = settings.get("img_q_value")
+    if q is None:
+        q = IMG_QUALITY[fmt][settings.get("img_quality", "balanced")]
     vargs = {
         "webp": ["-c:v", "libwebp", "-quality", str(q)],
         "avif": ["-c:v", "libaom-av1", "-crf", str(q), "-b:v", "0",
                  "-still-picture", "1", "-pix_fmt", "yuv420p"],
         "jpeg": ["-c:v", "mjpeg", "-q:v", str(q), "-pix_fmt", "yuvj420p"],
+        "png":  ["-c:v", "png"],
     }[fmt]
     vf = _image_vf(settings)
     strip = ["-map_metadata", "-1"] if settings.get("img_strip") else []

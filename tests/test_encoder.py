@@ -662,3 +662,96 @@ def test_gif_crop_filter_applies():
                                    {"gif_format": "gif", "gif_dither": "none",
                                     "crop_filter": "crop=640:640:100:0"}))
     assert "crop=640:640:100:0" in cmds[0]
+
+
+# ---------- audio tab: copy / lossless / trim / track / speed ----------
+def test_audio_copy_remuxes():
+    from encoder import audio_copy_ext
+    cmd = joined(build_audio_stages("in.mp4", "out.m4a",
+                                    {"aud_format": "copy"}))[0]
+    assert "-c:a copy" in cmd and "-vn" in cmd
+    assert "-b:a" not in cmd and "-af" not in cmd
+    assert audio_copy_ext("aac") == ".m4a"
+    assert audio_copy_ext("mp3") == ".mp3"
+    assert audio_copy_ext("opus") == ".ogg"
+    assert audio_copy_ext("pcm_s24le") == ".wav"
+    assert audio_copy_ext("weirdcodec") == ".mka"
+
+
+def test_audio_lossless_formats_skip_bitrate():
+    for fmt, enc in (("flac", "flac"), ("wav", "pcm_s16le")):
+        cmd = joined(build_audio_stages("in.mp4", "o",
+                                        {"aud_format": fmt}))[0]
+        assert f"-c:a {enc}" in cmd and "-b:a" not in cmd
+
+
+def test_audio_segment_trims_input_side():
+    cmd = joined(build_audio_stages("in.mp3", "out.mp3",
+                                    {"aud_format": "mp3", "aud_bitrate": "192k"},
+                                    segment=(10.0, 20.0)))[0]
+    assert cmd.index("-ss 10.000") < cmd.index("-i in.mp3")
+    assert "-t 20.000" in cmd
+
+
+def test_audio_track_and_mix():
+    cmd = joined(build_audio_stages("in.mkv", "out.mp3",
+                                    {"aud_format": "mp3", "aud_bitrate": "192k",
+                                     "aud_track": 1}))[0]
+    assert "-map 0:a:1?" in cmd
+    cmd = joined(build_audio_stages("in.mkv", "out.mp3",
+                                    {"aud_format": "mp3", "aud_bitrate": "192k",
+                                     "aud_track": "mix",
+                                     "audio_track_count": 3}))[0]
+    assert "[0:a:0][0:a:1][0:a:2]amix=inputs=3" in cmd and "-map [aout]" in cmd
+
+
+def test_audio_speed_and_normalize_chain():
+    cmd = joined(build_audio_stages("in.mp3", "out.mp3",
+                                    {"aud_format": "mp3", "aud_bitrate": "192k",
+                                     "aud_speed": 1.5, "aud_normalize": True}))[0]
+    assert "-af atempo=1.5,loudnorm=" in cmd and "-ar 48000" in cmd
+
+
+# ---------- image tab: png / crop / rotate / size ladder ----------
+def test_image_png_lossless():
+    cmd = joined(build_image_stages("in.heic", "out.png",
+                                    {"img_format": "png",
+                                     "img_quality": "balanced",
+                                     "img_resize": None}))[0]
+    assert "-c:v png" in cmd and "-quality" not in cmd
+
+
+def test_image_crop_and_rotate_in_chain():
+    cmd = joined(build_image_stages("in.jpg", "out.webp",
+                                    {"img_format": "webp",
+                                     "img_quality": "balanced",
+                                     "img_resize": ("h", 1080),
+                                     "crop_filter": "crop=800:800:10:20",
+                                     "img_rotate": "transpose=1"}))[0]
+    assert r"crop=800:800:10:20,transpose=1,scale=-2:min(1080\,ih)" in cmd
+
+
+def test_image_attempts_ladder():
+    from encoder import image_attempts
+    s = {"img_format": "webp", "img_quality": "balanced", "img_resize": None}
+    att = image_attempts(s)
+    # starts at the user's own quality, walks down, then shrinks
+    assert att[0]["img_q_value"] == 80 and att[0]["img_shrink"] is None
+    qs = [a["img_q_value"] for a in att if a["img_shrink"] is None]
+    assert qs == [80, 62, 45, 30, 20]
+    shrinks = [a["img_shrink"] for a in att if a["img_shrink"]]
+    assert shrinks == [0.85, 0.7, 0.55, 0.4, 0.3]
+    assert all(a["img_q_value"] == 20 for a in att if a["img_shrink"])
+    # jpeg's scale is inverted (higher number = worse quality)
+    s = {"img_format": "jpeg", "img_quality": "high", "img_resize": None}
+    qs = [a["img_q_value"] for a in image_attempts(s) if a["img_shrink"] is None]
+    assert qs == [3, 6, 10, 15, 22, 31]
+
+
+def test_image_shrink_applies_scale():
+    cmd = joined(build_image_stages("in.png", "out.webp",
+                                    {"img_format": "webp",
+                                     "img_quality": "balanced",
+                                     "img_resize": None, "img_q_value": 20,
+                                     "img_shrink": 0.7}))[0]
+    assert "scale=trunc(iw*0.7/2)*2" in cmd and "-quality 20" in cmd

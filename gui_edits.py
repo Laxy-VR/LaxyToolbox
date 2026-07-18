@@ -93,6 +93,9 @@ class EditsMixin:
                 pass
 
         def refresh_previews():
+            from models import is_audio
+            if is_audio(job.path):
+                return  # nothing to show for a sound file
             state["token"] += 1
             tok = state["token"]
             lo, hi = slider.values()

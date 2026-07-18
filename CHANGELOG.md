@@ -1,30 +1,39 @@
 # Changelog
 
-## v1.7.0 · 2026-07-18
-- **Trim each file separately**: right click a video · **Trim this file** for
-  a dialog with a range slider and live first/last frame previews. A per
-  file trim wins over the shared Trim fields, so every file in a batch can
-  keep its own range. Trimmed rows show a ✂ badge.
-- **Crop by drawing a box**: right click · **Crop this file** shows a real
-  frame; drag a rectangle over the part to keep. Wins over the Crop menu and
-  also applies to GIFs made from that file. Cropped rows show a ◱ badge.
-- **Paste into the queue**: Ctrl+V adds files copied in Explorer (or
-  anywhere) straight to the queue, and a copied link jumps to the Download
-  tab ready to go.
-- **Speed** (in Advanced): play videos at 0.25x to 4x. Audio is re-timed to
-  match, subtitles stay in sync, size targets account for the new length,
-  and 2x roughly halves the file size.
-
 ## v1.6.0 · 2026-07-18
 - **AMD and Intel GPU encoding.** The Hardware menu now offers NVIDIA
   (NVENC), AMD (AMF), and Intel (QSV) graphics cards for H.265, AV1, and
   H.264. Like before, a vendor is only listed after a real one second test
   encode proves it works on your machine, so the menu never offers a GPU
   that would fail mid batch.
-- **Audio track choice** (in Advanced): files with several audio tracks
-  (OBS recordings with game and mic kept separate) can keep one track or
-  **mix them all into one**. The menu only appears when a queued file
-  actually has more than one track.
+- **Trim each file separately**: right click · **Trim this file** for a
+  dialog with a range slider and live first/last frame previews. A per file
+  trim wins over the shared Trim fields, so every file in a batch can keep
+  its own range. Works for audio files too. Trimmed rows show a ✂ badge.
+- **Crop by drawing a box**: right click · **Crop this file** shows a real
+  frame; drag a rectangle over the part to keep. Wins over the Crop menu,
+  works on images too, and also applies to GIFs made from that file.
+  Cropped rows show a ◱ badge.
+- **Paste into the queue**: Ctrl+V adds files copied in Explorer (or
+  anywhere) straight to the queue, and a copied link jumps to the Download
+  tab ready to go.
+- **Speed**: play videos at 0.25x to 4x (in Advanced), with audio re-timed,
+  subtitles kept in sync, and size targets aware of the new length. The
+  Audio tab gets its own Speed for voice recordings.
+- **Audio track choice**: files with several audio tracks (OBS recordings
+  with game and mic kept separate) can keep one track or **mix them all
+  into one**, when compressing and when extracting audio. The menu only
+  appears when a queued file actually has more than one track.
+- **Audio tab: lossless options and trim.** **Copy original** extracts the
+  audio untouched (instant, zero quality loss, extension follows the source
+  codec), plus **Opus** (smallest), **FLAC**, and **WAV** outputs, and the
+  Trim fields now work on this tab.
+- **Images: iPhone HEIC input, PNG output, and a size cap.** HEIC/HEIF
+  photos convert like any other image. **Max size** re-tries down a quality
+  ladder (then shrinks) until the file fits under Discord style limits
+  (256 KB emoji, 512 KB sticker). **Rotate** joins the Images tab, and
+  transparent images now flatten onto **white** for JPEG/AVIF instead of
+  black (WebP and PNG keep transparency).
 - **Denoise** (in Advanced): Light and Medium options that soften film
   grain and sensor noise. Grainy footage compresses dramatically better
   with Light on, so files come out smaller too.
@@ -34,8 +43,6 @@
 - **Automatic deinterlacing**: interlaced sources (old TV captures, some
   camcorders) are detected during analysis and deinterlaced before
   encoding, on every tab including GIF. No setting needed.
-- **Opus on the Audio tab**: noticeably smaller than MP3 or M4A at the same
-  quality, and plays natively in Discord and every browser. Saved as .ogg.
 
 ## v1.5.0 · 2026-07-16
 - **GIF size control**: a Size menu on the GIF tab caps the output height

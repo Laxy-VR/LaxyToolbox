@@ -21,13 +21,28 @@ from models import (TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD,
                     IMG_RESIZE_OPTIONS, AUD_FORMAT_OPTIONS,
                     AUD_QUALITY_OPTIONS, RESOLUTIONS, FPS_OPTIONS,
                     AUDIO_OPTIONS, DENOISE_OPTIONS, AUDIO_TRACK_OPTIONS,
-                    SPEED_OPTIONS)
+                    SPEED_OPTIONS, IMG_MAX_OPTIONS, AUD_LOSSY)
 
 
 class SettingsMixin:
 
     def _on_setting_changed(self, _value=None):
+        self._sync_tab_controls()
         self._update_note()
+
+    def _sync_tab_controls(self):
+        """Greying rules for the Images/Audio tab menus: lossless and copy
+        formats have no quality knob, and a stream copy can't be re-timed
+        or normalized."""
+        img_fmt = dict(IMG_FORMAT_OPTIONS)[self.img_format_menu.get()]
+        self.img_quality_menu.configure(
+            state="disabled" if img_fmt == "png" else "normal")
+        aud_fmt = dict(AUD_FORMAT_OPTIONS)[self.aud_format_menu.get()]
+        self.aud_quality_menu.configure(
+            state="normal" if aud_fmt in AUD_LOSSY else "disabled")
+        copy = aud_fmt == "copy"
+        self.aud_normalize_check.configure(state="disabled" if copy else "normal")
+        self.aud_speed_menu.configure(state="disabled" if copy else "normal")
 
     def _on_gif_format_change(self, _value=None):
         # Palette and lossy options only exist for classic GIF output.
@@ -185,11 +200,23 @@ class SettingsMixin:
 
         compress = tab == TAB_COMPRESS
         adv = compress and self._advanced_open
-        show([self.mode_seg, self.trim_frame], compress)
+        show([self.mode_seg], compress)
+        # The trim row also serves the Audio tab (cut a section out of a
+        # recording); Cut only stays a Compress-tab concept.
+        show([self.trim_frame], compress or tab == TAB_AUDIO)
+        self.cut_only_check.configure(state="normal" if compress else "disabled")
         show(self._compress_essential_widgets(), compress)
         show([self.advanced_btn], compress)
         show(self._compress_advanced_widgets(), adv)
         show([self.fps_menu, self.fps_menu_label], adv or tab == TAB_GIF)
+        # Audio tab track choice appears only when a multi-track file is queued.
+        if any(j.info and j.info.audio_tracks > 1 for j in self.jobs):
+            self.aud_track_label.grid()
+            self.aud_track_menu.grid()
+        else:
+            self.aud_track_label.grid_remove()
+            self.aud_track_menu.grid_remove()
+        self._sync_tab_controls()
         # The empty-field default differs per tab; say so honestly.
         if tab == TAB_DOWNLOAD:
             dl_default = os.path.join(os.path.expanduser("~"), "Downloads")
@@ -298,10 +325,14 @@ class SettingsMixin:
             "img_format": dict(IMG_FORMAT_OPTIONS)[self.img_format_menu.get()],
             "img_quality": dict(IMG_QUALITY_OPTIONS)[self.img_quality_menu.get()],
             "img_resize": dict(IMG_RESIZE_OPTIONS)[self.img_resize_menu.get()],
+            "img_max_kb": dict(IMG_MAX_OPTIONS)[self.img_max_menu.get()],
+            "img_rotate": dict(ROTATE_OPTIONS)[self.img_rotate_menu.get()],
             "img_strip": bool(self.img_strip_check.get()),
             "aud_format": dict(AUD_FORMAT_OPTIONS)[self.aud_format_menu.get()],
             "aud_bitrate": dict(AUD_QUALITY_OPTIONS)[self.aud_quality_menu.get()],
             "aud_normalize": bool(self.aud_normalize_check.get()),
+            "aud_speed": dict(SPEED_OPTIONS)[self.aud_speed_menu.get()],
+            "aud_track": dict(AUDIO_TRACK_OPTIONS)[self.aud_track_menu.get()],
         }
 
     def _on_crf(self, value):

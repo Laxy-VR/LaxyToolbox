@@ -15,14 +15,14 @@ from tkinter import messagebox
 
 import theme
 from encoder import (run_encode, cleanup_passlogs, suggest_parts, IMG_EXT,
-                     AUD_ENCODERS)
+                     AUD_ENCODERS, audio_copy_ext)
 from models import (APP_NAME, APP_VERSION, GITHUB_REPO, MODE_QUALITY,
                     MODE_TARGET, MODE_SPLIT, MODE_GIF, MODE_IMAGE, MODE_AUDIO,
                     MODE_DOWNLOAD, PARTS_OPTIONS, GIF_FORMAT_OPTIONS,
                     GIF_OUT_EXT, IMG_FORMAT_OPTIONS, AUD_FORMAT_OPTIONS,
                     Job, SPEED_OPTIONS, unique_path, friendly_error, human_size,
                     is_image, is_audio, parse_time)
-from planner import plan_job, trimmed_duration
+from planner import plan_job, plan_image_attempts, trimmed_duration
 from probe import gpu_works, recommend_settings
 from sysutil import (set_keep_awake, flash_taskbar, latest_release,
                      is_newer_version, set_taskbar_progress)
@@ -80,7 +80,7 @@ class RunMixin:
                 self.status.configure(text="Clip length must be greater than 0.")
                 return
         settings["trim"] = None
-        if mode in (MODE_QUALITY, MODE_TARGET, MODE_SPLIT):
+        if mode in (MODE_QUALITY, MODE_TARGET, MODE_SPLIT, MODE_AUDIO):
             ts_raw = self.trim_start.get().strip()
             te_raw = self.trim_end.get().strip()
             ts = parse_time(ts_raw) if ts_raw else 0.0
@@ -94,6 +94,7 @@ class RunMixin:
                 return
             if ts > 0 or te is not None:
                 settings["trim"] = (ts, te)
+        if mode in (MODE_QUALITY, MODE_TARGET, MODE_SPLIT):
             settings["cut_only"] = self._cut_only()
             if settings["cut_only"] and settings["trim"] is None \
                     and not any(j.trim for j in jobs):
@@ -110,6 +111,10 @@ class RunMixin:
 
         parts_choice = dict(PARTS_OPTIONS)[self.parts_menu.get()] if mode == MODE_SPLIT else None
         limit_mb = size_mb if mode in (MODE_TARGET, MODE_SPLIT) else None
+        if mode == MODE_IMAGE and settings.get("img_max_kb"):
+            # The image size cap re-uses the over-limit machinery, so a file
+            # that couldn't be squeezed under the cap gets flagged.
+            limit_mb = settings["img_max_kb"] / 1024
         claimed = set()  # output paths already taken by earlier jobs this batch
         planned = {}  # job id -> outputs, computed before anything is mutated
         for job in jobs:  # all widget access happens here on the main thread
@@ -162,7 +167,11 @@ class RunMixin:
                 out = os.path.join(folder, f"{stem}_laxy{ext}")
             return [out]
         if mode == MODE_AUDIO:
-            ext = AUD_ENCODERS[dict(AUD_FORMAT_OPTIONS)[self.aud_format_menu.get()]][1]
+            fmt = dict(AUD_FORMAT_OPTIONS)[self.aud_format_menu.get()]
+            # "Copy original" keeps the source codec, so the container
+            # extension follows each file's own audio stream.
+            ext = audio_copy_ext(job.info.audio_codec) if fmt == "copy" \
+                else AUD_ENCODERS[fmt][1]
             out = os.path.join(folder, f"{stem}{ext}")
             if os.path.abspath(out) == os.path.abspath(job.path):  # same format in
                 out = os.path.join(folder, f"{stem}_laxy{ext}")
@@ -195,13 +204,16 @@ class RunMixin:
                 cancelled = True
                 break
             self.msg_queue.put(("job_status", job.id, "encoding"))
-            stages, passlogs, reason = plan_job(job, mode, base_settings, size_mb)
-            if stages is None:
-                self.msg_queue.put(("job_done", job.id, "failed", [reason]))
-                self.msg_queue.put(("overall", (idx + 1) / total))
-                continue
-
-            result, tail = self._run_stages(job, stages, idx, total)
+            if mode == MODE_IMAGE and base_settings.get("img_max_kb"):
+                result, tail, passlogs = self._run_image_capped(
+                    job, base_settings, idx, total)
+            else:
+                stages, passlogs, reason = plan_job(job, mode, base_settings, size_mb)
+                if stages is None:
+                    self.msg_queue.put(("job_done", job.id, "failed", [reason]))
+                    self.msg_queue.put(("overall", (idx + 1) / total))
+                    continue
+                result, tail = self._run_stages(job, stages, idx, total)
             for passlog in passlogs:
                 cleanup_passlogs(passlog)
             if result in ("failed", "cancelled"):
@@ -216,6 +228,22 @@ class RunMixin:
             for job in jobs:
                 self.msg_queue.put(("mark_cancelled", job.id))
         self.msg_queue.put(("all_done", cancelled))
+
+    def _run_image_capped(self, job, settings, idx, total):
+        """Encode an image under a hard size cap: walk the quality ladder,
+        then shrink the picture, until the output fits (or attempts run out;
+        the over-limit flag then marks the row)."""
+        cap = settings["img_max_kb"] * 1024
+        plans, temps = plan_image_attempts(job, settings)
+        result, tail = "failed", ["no image attempts planned"]
+        for stages in plans:
+            result, tail = self._run_stages(job, stages, idx, total)
+            if result != "done":
+                break
+            out = job.outputs[0]
+            if os.path.exists(out) and os.path.getsize(out) <= cap:
+                break
+        return result, tail, temps
 
     def _cleanup_outputs(self, job):
         for out in job.outputs:

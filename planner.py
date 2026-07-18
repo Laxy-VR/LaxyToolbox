@@ -10,7 +10,7 @@ import os
 import tempfile
 
 from encoder import (build_stages, build_gif_stages, build_image_stages,
-                     build_audio_stages, build_cut_stages,
+                     build_audio_stages, build_cut_stages, image_attempts,
                      video_bitrate_for_target, gif_output_duration,
                      suggest_parts)
 from models import (MODE_QUALITY, MODE_TARGET, MODE_SPLIT, MODE_GIF,
@@ -49,6 +49,46 @@ def resolve_subtitles(settings, video_path):
     return None
 
 
+def _flatten_alpha(fmt, path, job_id):
+    """(input_path, temp_or_None): transparent sources flatten onto WHITE for
+    formats that lose alpha here (JPEG always; AVIF as this app encodes it).
+    Without this, ffmpeg composites transparency onto black, which ruins
+    stickers and screenshots. Files PIL can't open are encoded as-is."""
+    if fmt not in ("jpeg", "avif"):
+        return path, None
+    try:
+        from PIL import Image
+        with Image.open(path) as img:
+            if not (img.mode in ("RGBA", "LA", "PA")
+                    or "transparency" in img.info):
+                return path, None
+            rgba = img.convert("RGBA")
+            flat = Image.new("RGB", rgba.size, (255, 255, 255))
+            flat.paste(rgba, mask=rgba.split()[3])
+            tmp = os.path.join(tempfile.gettempdir(),
+                               f"vc_flat_{os.getpid()}_{job_id}.png")
+            flat.save(tmp)
+            return tmp, tmp
+    except Exception:  # noqa: BLE001 - flattening is best-effort
+        return path, None
+
+
+def plan_image_attempts(job, base_settings):
+    """Stage lists to try in order for an image with a size cap: the worker
+    runs each until the output fits img_max_kb (see encoder.image_attempts).
+    Returns (list of stage lists, temp files to sweep afterwards)."""
+    settings = dict(base_settings)
+    if job.crop:
+        w, h, x, y = job.crop
+        settings["crop_filter"] = f"crop={w}:{h}:{x}:{y}"
+    src, tmp = _flatten_alpha(settings.get("img_format", "webp"),
+                              job.path, job.id)
+    plans = [[(lbl, cmd, 1.0) for lbl, cmd in
+              build_image_stages(src, job.outputs[0], s)]
+             for s in image_attempts(settings)]
+    return plans, ([tmp] if tmp else [])
+
+
 def plan_job(job, mode, base_settings, size_mb):
     """Build (stages, passlogs, reason). stages is None with a reason on failure.
     Each stage is (label, command, duration_seconds) for progress scaling."""
@@ -79,13 +119,26 @@ def plan_job(job, mode, base_settings, size_mb):
     safety = 0.90 if settings.get("encoder") in ("nvenc", "amf", "qsv") else 0.95
 
     if mode == MODE_IMAGE:
+        src, tmp = _flatten_alpha(settings.get("img_format", "webp"),
+                                  job.path, job.id)
         stages = [(lbl, cmd, 1.0) for lbl, cmd in
-                  build_image_stages(job.path, job.outputs[0], settings)]
-        return stages, [], None
+                  build_image_stages(src, job.outputs[0], settings)]
+        return stages, [tmp] if tmp else [], None
 
     if mode == MODE_AUDIO:
-        stages = [(lbl, cmd, dur) for lbl, cmd in
-                  build_audio_stages(job.path, job.outputs[0], settings)]
+        trim = job.trim or settings.get("trim")
+        t0 = min(trim[0], max(dur - 0.1, 0)) if (trim and dur > 0) \
+            else (trim[0] if trim else 0.0)
+        dur_eff = trimmed_duration(dur, trim)
+        if trim and dur_eff <= 0:
+            return None, [], "the trim range is outside this file"
+        seg = (t0, dur_eff) if trim else None
+        spd = float(settings.get("aud_speed") or 1.0)
+        if settings.get("aud_format") == "copy":
+            spd = 1.0  # a stream copy cannot change speed
+        stages = [(lbl, cmd, dur_eff / spd if spd > 0 else dur_eff)
+                  for lbl, cmd in build_audio_stages(
+                      job.path, job.outputs[0], settings, segment=seg)]
         return stages, [], None
 
     if mode == MODE_GIF:
@@ -258,10 +311,14 @@ def estimate_output_bytes(info, mode, settings, size_mb=None,
         w = h = min(w, h)
 
     if mode == MODE_AUDIO:
-        if info.duration <= 0:
+        if settings.get("aud_format") not in (None, "mp3", "m4a", "opus"):
+            return None  # copy / lossless: no honest prediction
+        dur_a = trimmed_duration(info.duration, settings.get("trim"))
+        if dur_a <= 0:
             return None
+        spd = float(settings.get("aud_speed") or 1.0)
         kbps = int(str(settings.get("aud_bitrate", "192k")).rstrip("k"))
-        return kbps * 1000 * info.duration / 8
+        return kbps * 1000 * (dur_a / spd if spd > 0 else dur_a) / 8
 
     if mode == MODE_IMAGE:
         return None  # too content dependent to be worth a number

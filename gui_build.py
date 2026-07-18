@@ -24,7 +24,8 @@ from models import (APP_NAME, APP_VERSION, TAB_COMPRESS, TAB_GIF, TAB_IMAGE,
                     IMG_QUALITY_OPTIONS, IMG_RESIZE_OPTIONS,
                     AUD_FORMAT_OPTIONS, AUD_QUALITY_OPTIONS, PARTS_OPTIONS,
                     PRESETS, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS,
-                    DENOISE_OPTIONS, AUDIO_TRACK_OPTIONS, SPEED_OPTIONS)
+                    DENOISE_OPTIONS, AUDIO_TRACK_OPTIONS, SPEED_OPTIONS,
+                    IMG_MAX_OPTIONS)
 from probe import gpu_vendors, has_gifsicle
 from sysutil import resource_path
 from widgets import Tooltip, RangeSlider, QueueRow
@@ -362,13 +363,19 @@ class BuildMixin:
         self.image_frame = ctk.CTkFrame(card, fg_color="transparent")
         img_left = ctk.CTkFrame(self.image_frame, fg_color="transparent")
         img_left.grid(row=0, column=0, sticky="nw")
-        for irow, (label, values, default, attr) in enumerate([
-                ("Format", [o[0] for o in IMG_FORMAT_OPTIONS],
-                 IMG_FORMAT_OPTIONS[0][0], "img_format_menu"),
-                ("Quality", [o[0] for o in IMG_QUALITY_OPTIONS],
-                 IMG_QUALITY_OPTIONS[1][0], "img_quality_menu"),
-                ("Resize", [o[0] for o in IMG_RESIZE_OPTIONS],
-                 IMG_RESIZE_OPTIONS[0][0], "img_resize_menu")]):
+        img_rows = [
+            ("Format", [o[0] for o in IMG_FORMAT_OPTIONS],
+             IMG_FORMAT_OPTIONS[0][0], "img_format_menu"),
+            ("Quality", [o[0] for o in IMG_QUALITY_OPTIONS],
+             IMG_QUALITY_OPTIONS[1][0], "img_quality_menu"),
+            ("Resize", [o[0] for o in IMG_RESIZE_OPTIONS],
+             IMG_RESIZE_OPTIONS[0][0], "img_resize_menu"),
+            ("Max size", [o[0] for o in IMG_MAX_OPTIONS],
+             IMG_MAX_OPTIONS[0][0], "img_max_menu"),
+            ("Rotate", [o[0] for o in ROTATE_OPTIONS],
+             ROTATE_OPTIONS[0][0], "img_rotate_menu"),
+        ]
+        for irow, (label, values, default, attr) in enumerate(img_rows):
             ctk.CTkLabel(img_left, text=label, width=60, anchor="w").grid(
                 row=irow, column=0, sticky="w", pady=3)
             menu = ctk.CTkOptionMenu(img_left, width=230, values=values,
@@ -379,8 +386,8 @@ class BuildMixin:
         self.img_strip_check = ctk.CTkCheckBox(
             img_left, text="Strip metadata (EXIF, GPS)",
             command=self._on_setting_changed)
-        self.img_strip_check.grid(row=3, column=0, columnspan=2, sticky="w",
-                                  pady=(6, 0))
+        self.img_strip_check.grid(row=len(img_rows), column=0, columnspan=2,
+                                  sticky="w", pady=(6, 0))
         self.img_preview = ctk.CTkLabel(self.image_frame, text="preview",
                                         text_color=theme.TEXT_MUTED,
                                         width=160, height=90, fg_color=theme.SURFACE2,
@@ -433,10 +440,30 @@ class BuildMixin:
             command=self._on_setting_changed)
         self.aud_quality_menu.set(AUD_QUALITY_OPTIONS[1][0])
         self.aud_quality_menu.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=3)
+        ctk.CTkLabel(self.audio_frame, text="Speed", width=60, anchor="w").grid(
+            row=2, column=0, sticky="w", pady=3)
+        self.aud_speed_menu = ctk.CTkOptionMenu(
+            self.audio_frame, width=230, values=[s[0] for s in SPEED_OPTIONS],
+            command=self._on_setting_changed)
+        self.aud_speed_menu.set(SPEED_OPTIONS[0][0])
+        self.aud_speed_menu.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=3)
+        # Track choice: hidden until a queued file has more than one audio
+        # track (same rule as the Compress tab's Audio track menu).
+        self.aud_track_label = ctk.CTkLabel(self.audio_frame, text="Track",
+                                            width=60, anchor="w")
+        self.aud_track_label.grid(row=3, column=0, sticky="w", pady=3)
+        self.aud_track_menu = ctk.CTkOptionMenu(
+            self.audio_frame, width=230,
+            values=[t[0] for t in AUDIO_TRACK_OPTIONS],
+            command=self._on_setting_changed)
+        self.aud_track_menu.set(AUDIO_TRACK_OPTIONS[0][0])
+        self.aud_track_menu.grid(row=3, column=1, sticky="w", padx=(8, 0), pady=3)
+        self.aud_track_label.grid_remove()
+        self.aud_track_menu.grid_remove()
         self.aud_normalize_check = ctk.CTkCheckBox(
             self.audio_frame, text="Normalize volume",
             command=self._on_setting_changed)
-        self.aud_normalize_check.grid(row=2, column=0, columnspan=2, sticky="w",
+        self.aud_normalize_check.grid(row=4, column=0, columnspan=2, sticky="w",
                                       pady=(6, 0))
 
         # Codec + hardware selectors, side by side. The hardware menu only
@@ -645,6 +672,25 @@ class BuildMixin:
             self.speed_menu: "Play the video faster (timelapse) or slower. "
                              "Audio is re-timed to match, and 2x roughly "
                              "halves the file size.",
+            self.img_max_menu: "Hard size cap. The app lowers quality, then "
+                               "shrinks the picture, until the file fits "
+                               "(Discord: 256 KB emoji, 512 KB stickers).",
+            self.img_rotate_menu: "Fix a sideways photo, or mirror it.",
+            self.img_format_menu: "WebP keeps transparency and is small. "
+                                  "AVIF is smallest. JPEG and AVIF flatten "
+                                  "transparency onto white. PNG is lossless "
+                                  "and keeps transparency. iPhone HEIC "
+                                  "photos are accepted as input.",
+            self.aud_format_menu: "MP3/M4A/Opus re-encode (Opus is the "
+                                  "smallest). Copy original extracts the "
+                                  "audio untouched: instant and zero "
+                                  "quality loss. FLAC/WAV are lossless "
+                                  "for editing.",
+            self.aud_speed_menu: "Play faster or slower (1.5x for voice "
+                                 "recordings). Not available with Copy "
+                                 "original.",
+            self.aud_track_menu: "Files with several audio tracks: keep "
+                                 "one track, or mix them all into one.",
         }
         if self.hw_menu is not None:
             tips[self.hw_menu] = ("GPU is much faster. CPU gives slightly better "

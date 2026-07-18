@@ -7,7 +7,7 @@ import theme
 from probe import VideoInfo
 
 APP_NAME = "Laxy's Toolbox"
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.6.0"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
@@ -29,9 +29,15 @@ MODE_DOWNLOAD = "Download"      # internal effective mode for the Download tab
 
 AUD_FORMAT_OPTIONS = [("MP3 (plays everywhere)", "mp3"),
                       ("M4A (smaller, modern)", "m4a"),
-                      ("Opus (smallest, modern)", "opus")]
+                      ("Opus (smallest, modern)", "opus"),
+                      ("Copy original (no re-encode)", "copy"),
+                      ("FLAC (lossless)", "flac"),
+                      ("WAV (uncompressed)", "wav")]
 AUD_QUALITY_OPTIONS = [("High (256k)", "256k"), ("Balanced (192k)", "192k"),
                        ("Small (128k)", "128k")]
+# Formats where the bitrate menu means something; the rest are lossless
+# (or a straight copy) and grey it out.
+AUD_LOSSY = {"mp3", "m4a", "opus"}
 
 # Max resolution when downloading (yt-dlp -S res: sorting; None = best available)
 DL_RES_OPTIONS = [("Best available", None), ("Max 2160p", 2160),
@@ -140,10 +146,17 @@ SUB_EXTS = (".srt", ".ass", ".vtt")
 
 IMG_FORMAT_OPTIONS = [("WebP (recommended)", "webp"),
                       ("AVIF (smallest)", "avif"),
-                      ("JPEG (max compatibility)", "jpeg")]
+                      ("JPEG (max compatibility)", "jpeg"),
+                      ("PNG (lossless)", "png")]
 IMG_QUALITY_OPTIONS = [("High (near lossless)", "high"),
                        ("Balanced", "balanced"),
                        ("Small", "small")]
+# Hard size cap for images (KB). The encode retries down a quality ladder,
+# then shrinks the picture, until the file fits. Values match the platform
+# limits people actually hit (Discord emoji 256 KB, stickers 512 KB).
+IMG_MAX_OPTIONS = [("No size limit", None), ("Under 10 MB", 10240),
+                   ("Under 1 MB", 1024), ("Under 512 KB (sticker)", 512),
+                   ("Under 256 KB (emote)", 256)]
 # Resize is either a multiplier ("mul") or a max height cap ("h", never upscales).
 IMG_RESIZE_OPTIONS = [("Keep original", None),
                       ("2x larger", ("mul", 2.0)),
@@ -166,7 +179,9 @@ AUDIO_OPTIONS = [("Copy (no re-encode)", ("copy", None)), ("AAC 192k", ("aac", "
 
 VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".wmv",
               ".flv", ".mpg", ".mpeg", ".ts", ".m2ts", ".gif"}
-IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".avif"}
+# .heic/.heif: iPhone photos; the bundled ffmpeg 7.1 decodes them natively.
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".avif",
+              ".heic", ".heif"}
 AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma"}
 MEDIA_EXTS = VIDEO_EXTS | IMAGE_EXTS | AUDIO_EXTS
 

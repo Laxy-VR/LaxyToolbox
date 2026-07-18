@@ -422,3 +422,61 @@ def test_speed_shrinks_estimate():
     est_1x = estimate_output_bytes(_info(), MODE_QUALITY, settings())
     est_2x = estimate_output_bytes(_info(), MODE_QUALITY, settings(speed=2.0))
     assert est_2x == pytest.approx(est_1x / 2)
+
+
+# ---------- audio trim / speed, image flatten and attempts ----------
+def test_audio_mode_trim_and_speed():
+    job = make_job(outputs=["out.mp3"])
+    job.trim = (10.0, 40.0)
+    stages, _p, reason = plan_job(job, MODE_AUDIO,
+                                  settings(aud_speed=2.0), None)
+    assert reason is None
+    cmd = " ".join(stages[0][1])
+    assert "-ss 10.000" in cmd and "-t 30.000" in cmd
+    assert stages[0][2] == pytest.approx(15.0)  # 30s of audio at 2x
+
+
+def test_audio_copy_ignores_speed():
+    stages, _p, reason = plan_job(make_job(outputs=["o.m4a"]), MODE_AUDIO,
+                                  settings(aud_format="copy", aud_speed=2.0),
+                                  None)
+    assert reason is None
+    assert "atempo" not in " ".join(stages[0][1])
+    assert stages[0][2] == 60.0  # copy keeps real time
+
+
+def test_image_flatten_transparent_for_jpeg(tmp_path):
+    from PIL import Image
+    src = tmp_path / "sticker.png"
+    Image.new("RGBA", (64, 64), (255, 0, 0, 0)).save(src)
+    job = make_job(str(src), outputs=[str(tmp_path / "out.jpg")])
+    stages, temps, reason = plan_job(job, MODE_IMAGE,
+                                     settings(img_format="jpeg"), None)
+    assert reason is None and len(temps) == 1
+    assert temps[0] in " ".join(stages[0][1])  # encodes the flattened temp
+    import os
+    assert os.path.exists(temps[0])
+    from encoder import cleanup_passlogs
+    cleanup_passlogs(temps[0])
+    assert not os.path.exists(temps[0])
+
+
+def test_image_opaque_needs_no_flatten(tmp_path):
+    from PIL import Image
+    src = tmp_path / "photo.png"
+    Image.new("RGB", (64, 64), (0, 128, 0)).save(src)
+    job = make_job(str(src), outputs=[str(tmp_path / "out.jpg")])
+    stages, temps, reason = plan_job(job, MODE_IMAGE,
+                                     settings(img_format="jpeg"), None)
+    assert reason is None and temps == []
+    assert str(src) in " ".join(stages[0][1])
+
+
+def test_plan_image_attempts_carries_crop():
+    from planner import plan_image_attempts
+    job = make_job("in.png", outputs=["out.webp"])
+    job.crop = (100, 100, 4, 4)
+    plans, temps = plan_image_attempts(job, settings(img_format="webp",
+                                                     img_max_kb=256))
+    assert len(plans) > 5 and temps == []
+    assert all("crop=100:100:4:4" in " ".join(p[0][1]) for p in plans)

@@ -64,15 +64,20 @@ dithering, and palette size (256/128/64 colors). **Lossy compression**
 (gifsicle) squeezes GIFs another 30 to 60% at three strengths, and **Skip
 still frames** drops frames where nothing moved. Also shrinks existing GIFs.
 
-**🖼 Images** · Batch convert PNG/JPEG/BMP to **WebP**, **AVIF**, or **JPEG**
-at three quality levels, with optional resizing that never upscales by
-accident, and a **strip metadata** option that removes EXIF/GPS before
-sharing.
+**🖼 Images** · Batch convert PNG/JPEG/BMP and **iPhone HEIC photos** to
+**WebP**, **AVIF**, **JPEG**, or **PNG** at three quality levels, with a
+**Max size** cap that keeps retrying until the file fits (256 KB emoji,
+512 KB stickers), optional resizing that never upscales by accident, rotate,
+right click **crop by drawing a box**, and a **strip metadata** option that
+removes EXIF/GPS before sharing. Transparency survives WebP/PNG and flattens
+onto white (not black) for JPEG/AVIF.
 
-**🎵 Audio** · Extract the soundtrack from any video, or convert audio files,
-to MP3, M4A, or **Opus** (smallest at the same quality, plays in Discord and
-every browser), with optional **volume normalization** for quiet or harsh
-recordings.
+**🎵 Audio** · Extract the soundtrack from any video, or convert audio
+files, to MP3, M4A, **Opus** (smallest at the same quality, plays in Discord
+and every browser), **FLAC**, **WAV**, or **Copy original** (the untouched
+source stream: instant and zero quality loss). Trim a range, pick a **track
+or mix them all** on multi track recordings, change **speed** (1.5x voice
+memos), and **normalize volume** for quiet or harsh recordings.
 
 **🌐 Download** · Paste a link from YouTube, Twitter, and most sites. Pick a
 max resolution or grab audio only, or turn on **Whole playlist** to fetch
