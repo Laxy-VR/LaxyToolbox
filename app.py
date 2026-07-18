@@ -70,6 +70,8 @@ class App(BuildMixin, QueueMixin, EditsMixin, DownloadsMixin, NotesMixin,
         self._user_presets: dict = {}  # name -> settings snapshot, from config
         self._sample_cancel = threading.Event()  # stops a running 5s sample
         self._sample_files: list = []  # temp sample encodes, swept on close
+        self._updating = False  # an in-app update download is in flight
+        self._upd_cancel = threading.Event()  # aborts it on close
 
         self._build_ui()
         # Size to fit every control: height is measured on the taller
@@ -116,6 +118,7 @@ class App(BuildMixin, QueueMixin, EditsMixin, DownloadsMixin, NotesMixin,
     def _on_close(self):
         self.cancel_event.set()  # stop the encode loop scheduling more work
         self._sample_cancel.set()  # and any 5s sample encode
+        self._upd_cancel.set()  # and an in-flight update download
         for ev in self._dl_cancels.values():  # stop in-flight downloads
             ev.set()
         self._save_config()
@@ -173,6 +176,11 @@ if __name__ == "__main__":
         i = sys.argv.index("--selftest")
         _selftest(sys.argv[i + 1] if i + 1 < len(sys.argv) else "selftest.json")
         sys.exit(0)
+
+    # Sweep leftovers from a previous in-app update (the .old exe the
+    # swap left behind); harmless no-op in dev runs.
+    import updater
+    updater.sweep_leftovers()
 
     theme.load_brand_fonts(resource_path("fonts"))  # before Tk reads families
     _accent = "Purple"

@@ -22,6 +22,7 @@ workflow.
 | `planner.py` | Pure planning: `plan_job` turns one queued job + mode + settings snapshot into `(label, command, duration)` stages and 2 pass log paths; `estimate_output_bytes` backs the per-row size predictions; the Target size roomy/tight decision lives here. No widgets or threads, fully unit tested. |
 | `probe.py` | Reads metadata via ffprobe (`probe_video` → `VideoInfo`), recommends settings, resolves the bundled ffmpeg/ffprobe/gifsicle paths, detects GPU encoders (`gpu_codecs`, `nvenc_works`), extracts preview frames. |
 | `downloader.py` | yt-dlp integration: fetch and self update the binary, build the download command, parse progress, locate the finished file. |
+| `updater.py` | In-app updating: release asset lookup (with GitHub's per-asset sha256 digest), verified streaming download, and the rename swap that replaces the running exe. Pure functions returning error strings; the GUI flow lives in `gui_run.py`. |
 | `widgets.py` | `QueueRow` (the per file list item, draggable), `Tooltip` (static or live text), and `RangeSlider` (the two handle Canvas slider behind the GIF clip and trim ranges). |
 | `sysutil.py` | Windows helpers: keep awake, taskbar flash and real taskbar progress (ITaskbarList3 via ctypes), bundled resource paths, GitHub release lookup, self relaunch with a reset PyInstaller environment, and the child process registry (`track_child` / `terminate_children`) that stops window close from orphaning ffmpeg or yt-dlp. |
 | `theme.py` | Accent palettes (`ACCENTS`), private font loading, CustomTkinter theme override. `apply_theme(accent)` also rotates every neutral's hue to follow the accent, so a green app gets green tinted darks. |
@@ -119,7 +120,16 @@ untouched.
 4. On GitHub: create a release from that tag. CI builds the exe (downloading
    its own pinned ffmpeg) and attaches it to the release.
 5. Every installed copy checks the latest release at startup and shows an
-   update link in the header when it is newer than `APP_VERSION`.
+   update notice in the header when it is newer than `APP_VERSION`.
+   Clicking it self-updates: download to `.new` (verified against the
+   asset's sha256 digest from the GitHub API), rename the running exe to
+   `.old`, rename `.new` into place, relaunch. The `.old` is kept until the
+   next startup sweeps it, so a failed install always rolls back to a
+   working exe; any failure falls back to opening the release page. A
+   running exe cannot be overwritten but CAN be renamed, which is the whole
+   trick (yt-dlp's `-U` does the same dance). Dev runs never self-update.
+   The full flow only exists frozen, so test it across two real releases
+   (or a pre-release) before trusting a change to it.
 
 **Releases build from the workflow as it exists at the tagged commit.** A tag
 placed before a workflow fix will faithfully rebuild the old, broken recipe.

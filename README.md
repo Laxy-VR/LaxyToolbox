@@ -12,9 +12,10 @@ Grab `Laxy.Toolbox.exe` from the
 double click it. No Python, no ffmpeg, no installer needed.
 
 > **First launch:** Windows SmartScreen may warn about an unknown app because
-> the exe is not code signed. Click **More info · Run anyway**. The app also
-> checks for new versions at startup and shows a link in the header when one
-> is available.
+> the exe is not code signed. Click **More info · Run anyway**. The app
+> checks for new versions at startup; clicking the notice in the header
+> **updates the app in place** (the download is verified against GitHub's
+> checksum) and restarts it.
 >
 > **Antivirus:** a VirusTotal scan shows 2 of 68 engines flagging the exe
 > (Bkav and McAfee's generic scanner), with generic, hash named "detections".

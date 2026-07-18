@@ -14,6 +14,7 @@ import time
 from tkinter import messagebox
 
 import theme
+import updater
 from encoder import (run_encode, cleanup_passlogs, suggest_parts, IMG_EXT,
                      AUD_ENCODERS, audio_copy_ext)
 from models import (APP_NAME, APP_VERSION, GITHUB_REPO, MODE_QUALITY,
@@ -345,6 +346,14 @@ class RunMixin:
             self._on_gpu_probed(msg[1], msg[2])
         elif kind == "sample_done":
             self._on_sample_done(msg[1], msg[2])
+        elif kind == "upd_progress":
+            self.progress.set(msg[1])
+            self.status.configure(
+                text=f"Downloading the update… {int(msg[1] * 100)}%")
+        elif kind == "update_ready":
+            self._on_update_ready()
+        elif kind == "update_fail":
+            self._on_update_fail(msg[1], msg[2])
         elif kind == "row_thumb":
             job = self._job(msg[1])
             if job and job.row:
@@ -546,9 +555,73 @@ class RunMixin:
             self.msg_queue.put(("update", tag, url))
 
     def _show_update(self, tag, url):
-        """Turn the version chip into a clickable update link."""
+        """Turn the version chip into an update action: packaged builds
+        update in place; dev runs just open the release page."""
         import webbrowser
         self.version_label.configure(
             text=f"v{APP_VERSION} · {tag} available!", text_color=theme.ACCENT_HOVER,
             cursor="hand2")
-        self.version_label.bind("<Button-1>", lambda _e: webbrowser.open(url))
+        if updater.exe_path():
+            self.version_label.bind("<Button-1>",
+                                    lambda _e: self._start_update(tag, url))
+        else:
+            self.version_label.bind("<Button-1>", lambda _e: webbrowser.open(url))
+
+    # ---------- in-app update (packaged exe only) ----------
+    def _start_update(self, tag, url):
+        if self._updating:
+            return
+        if self.start_btn.cget("state") == "disabled":
+            self.status.configure(text="Finish or cancel the current batch first.")
+            return
+        if not messagebox.askyesno(
+                APP_NAME,
+                f"Update to {tag} now?\n\nThe new version downloads "
+                "(about 150 MB), installs, and the app restarts.",
+                parent=self):
+            return
+        self._updating = True
+        self.version_label.configure(text=f"updating to {tag}…")
+        self.status.configure(text="Downloading the update…")
+        threading.Thread(target=self._update_worker, args=(url,),
+                         daemon=True).start()
+
+    def _update_worker(self, page_url):
+        """Download and stage the new exe; the swap result comes back to the
+        main thread, which relaunches. Any failure falls back to the page."""
+        asset = updater.latest_asset(GITHUB_REPO)
+        if asset is None:
+            self.msg_queue.put(("update_fail", "could not read the release",
+                                page_url))
+            return
+        _tag, _page, dl_url, sha, _size = asset
+        dest = updater.exe_path() + ".new"
+        err = updater.download(
+            dl_url, dest, sha256=sha,
+            on_progress=lambda f: self.msg_queue.put(("upd_progress", f)),
+            cancel=self._upd_cancel)
+        if err == "cancelled":  # app is closing; say nothing
+            return
+        if err is None:
+            err = updater.apply(dest)
+        if err:
+            self.msg_queue.put(("update_fail", err, page_url))
+        else:
+            self.msg_queue.put(("update_ready",))
+
+    def _on_update_ready(self):
+        """The new exe is in place: hand over to it and shut down."""
+        from sysutil import relaunch
+        self.status.configure(text="Update installed · restarting…")
+        relaunch()
+        self._on_close()
+
+    def _on_update_fail(self, err, url):
+        import webbrowser
+        self._updating = False
+        self.progress.set(0)
+        self.version_label.configure(text=f"v{APP_VERSION}")
+        self.status.configure(
+            text=f"Update failed ({friendly_error(err)}) · opening the "
+                 "release page to grab it yourself.")
+        webbrowser.open(url)

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- **The app updates itself.** Clicking the update notice in the header now
+  downloads the new version (verified against GitHub's checksum), installs
+  it, and restarts, instead of sending you to the release page. If
+  anything goes wrong the old version stays untouched and the release page
+  opens as before.
+
 ## v1.6.0 · 2026-07-18
 - **AMD and Intel GPU encoding.** The Hardware menu now offers NVIDIA
   (NVENC), AMD (AMF), and Intel (QSV) graphics cards for H.265, AV1, and
