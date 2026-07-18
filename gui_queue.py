@@ -16,7 +16,7 @@ from tkinter import filedialog
 from models import (MEDIA_EXTS, Job, is_audio, is_image, human_size,
                     parse_time)
 from probe import probe_video
-from sysutil import copy_files_to_clipboard
+from sysutil import copy_files_to_clipboard, clipboard_file_paths
 from widgets import QueueRow
 
 
@@ -41,23 +41,59 @@ class QueueMixin:
             return
         self._add_paths(paths)
 
-    def _on_drop(self, event):
-        """Handle files/folders dropped onto the window."""
-        # tkdnd braces paths with spaces; parse with a regex rather than Tcl
-        # splitlist, which would eat backslashes in Windows paths.
-        tokens = re.findall(r"\{[^}]*\}|\S+", event.data)
+    @staticmethod
+    def _expand_media(raw_paths):
+        """Media files from a mixed list of files and folders (folders are
+        listed one level deep); anything that isn't a media file is dropped."""
         paths = []
-        for token in tokens:
-            p = token[1:-1] if token.startswith("{") and token.endswith("}") else token
+        for p in raw_paths:
             if os.path.isdir(p):
                 paths += [os.path.join(p, n) for n in sorted(os.listdir(p))
                           if os.path.splitext(n)[1].lower() in MEDIA_EXTS]
             elif os.path.splitext(p)[1].lower() in MEDIA_EXTS:
                 paths.append(p)
+        return paths
+
+    def _on_drop(self, event):
+        """Handle files/folders dropped onto the window."""
+        # tkdnd braces paths with spaces; parse with a regex rather than Tcl
+        # splitlist, which would eat backslashes in Windows paths.
+        tokens = re.findall(r"\{[^}]*\}|\S+", event.data)
+        paths = self._expand_media(
+            [t[1:-1] if t.startswith("{") and t.endswith("}") else t
+             for t in tokens])
         if paths:
             self._add_paths(paths)
         else:
             self.status.configure(text="Drop videos, GIFs, or images (or a folder of them).")
+
+    def _on_paste(self, _event=None):
+        """Ctrl+V: add copied files to the queue, or a copied link to the
+        Download tab. Paste inside a text field is left to the field."""
+        if isinstance(self.focus_get(), tk.Entry):
+            return
+        if self.start_btn.cget("state") == "disabled":
+            return  # queue is locked mid-run
+        paths = self._expand_media(clipboard_file_paths())
+        if paths:
+            self._add_paths(paths)
+            return
+        try:
+            text = self.clipboard_get().strip()
+        except tk.TclError:
+            text = ""
+        if text.lower().startswith(("http://", "https://")):
+            from models import TAB_DOWNLOAD
+            self.tab_seg.set(TAB_DOWNLOAD)
+            self._on_tab_change()
+            self.url_entry.delete(0, "end")
+            self.url_entry.insert(0, text)
+            self.status.configure(text="Link pasted · press Download.")
+        elif self._expand_media([text]):
+            self._add_paths(self._expand_media([text]))
+        else:
+            self.status.configure(
+                text="Nothing pasteable: copy media files, a folder, or a link.")
 
     def _add_paths(self, paths):
         existing = {j.path for j in self.jobs}
@@ -254,6 +290,11 @@ class QueueMixin:
             text = (f"{os.path.basename(job.path)}  ·  {i.resolution_label} @ {i.fps:.0f}fps  "
                     f"·  {mins}m{secs:02d}s  ·  {i.video_codec}/{i.audio_codec or 'no audio'}  "
                     f"·  {human_size(i.size_bytes)}")
+        if job.trim:
+            t0, t1 = job.trim
+            text += f"  ·  ✂ {t0:g}s to {'end' if t1 is None else f'{t1:g}s'}"
+        if job.crop:
+            text += f"  ·  ◱ keeps {job.crop[0]}×{job.crop[1]}"
         if job.status == "done" and job.out_size:
             parts = f"{len(job.outputs)} parts, " if len(job.outputs) > 1 else ""
             text += f"      →   {parts}{human_size(job.out_size)}"
@@ -396,6 +437,13 @@ class QueueMixin:
             menu.add_separator()
         if job.info and not is_image(job.path) and not is_audio(job.path) \
                 and os.path.exists(job.path):
+            if self.start_btn.cget("state") != "disabled":
+                menu.add_command(
+                    label="Trim this file…" + ("  ✂" if job.trim else ""),
+                    command=lambda: self._trim_dialog(job))
+                menu.add_command(
+                    label="Crop this file…" + ("  ◱" if job.crop else ""),
+                    command=lambda: self._crop_dialog(job))
             menu.add_command(label="Save a frame…",
                              command=lambda: self._save_frame(job))
             menu.add_separator()

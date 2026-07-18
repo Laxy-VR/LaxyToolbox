@@ -219,6 +219,21 @@ ingredients.
   `encoder.TONEMAP` (a zscale + hable chain) handles H.264 and GIF outputs
   from HDR sources.
 
+### Speed changes
+- Order matters twice. Video: subtitles burn in BEFORE `setpts` (they render
+  on the original clock; after re-timing they drift), and `fps` comes AFTER
+  `setpts` so the requested output rate sticks. Audio: `atempo` covers
+  0.5x..100x per instance, so 0.25x chains two 0.5x stages; a speed change
+  always re-encodes audio (copy silently becomes AAC).
+- Size targeting and progress both work in OUTPUT seconds (`dur / speed`):
+  a 2x speed halves the timeline the bitrate must cover.
+
+### Per-file edits (job.trim / job.crop)
+- The right click Trim and Crop dialogs store their result on the Job, and
+  `plan_job` gives them priority over the shared Trim fields and Crop menu.
+  Anything mirroring plan time behaviour (estimates, split part counts,
+  `_outputs_for`) must apply the same `job.x or settings[...]` precedence.
+
 ### Audio track mixing
 - "Mix all tracks" builds an `amix` complex filtergraph. A `-vf` on the
   video stream alongside `-filter_complex` on the audio streams is legal

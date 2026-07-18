@@ -24,7 +24,7 @@ from models import (APP_NAME, APP_VERSION, TAB_COMPRESS, TAB_GIF, TAB_IMAGE,
                     IMG_QUALITY_OPTIONS, IMG_RESIZE_OPTIONS,
                     AUD_FORMAT_OPTIONS, AUD_QUALITY_OPTIONS, PARTS_OPTIONS,
                     PRESETS, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS,
-                    DENOISE_OPTIONS, AUDIO_TRACK_OPTIONS)
+                    DENOISE_OPTIONS, AUDIO_TRACK_OPTIONS, SPEED_OPTIONS)
 from probe import gpu_vendors, has_gifsicle
 from sysutil import resource_path
 from widgets import Tooltip, RangeSlider, QueueRow
@@ -499,13 +499,15 @@ class BuildMixin:
                        [t[0] for t in AUDIO_TRACK_OPTIONS],
                        AUDIO_TRACK_OPTIONS[0][0], "track_menu",
                        self._on_setting_changed)
+        self._menu_row(card, 12, 2, "Speed", [s[0] for s in SPEED_OPTIONS],
+                       SPEED_OPTIONS[0][0], "speed_menu", self._on_setting_changed)
         # Encode 5 seconds from the middle with the current settings, to
         # judge quality before committing to a long encode.
         self.sample_btn = ctk.CTkButton(
             card, text="Test a 5s sample", width=130, height=24,
             fg_color="transparent", hover_color=theme.SURFACE2,
             text_color=theme.TEXT_MUTED, command=self.on_sample)
-        self.sample_btn.grid(row=12, column=3, sticky="e", padx=14)
+        self.sample_btn.grid(row=8, column=3, sticky="e", padx=14, pady=(2, 0))
 
         # Optional trim (Compress tab only): encode just start..end seconds
         self.trim_frame = ctk.CTkFrame(card, fg_color="transparent")
@@ -640,6 +642,9 @@ class BuildMixin:
                              "selected video with the current settings and "
                              "opens it, so you can judge quality before a "
                              "long encode.",
+            self.speed_menu: "Play the video faster (timelapse) or slower. "
+                             "Audio is re-timed to match, and 2x roughly "
+                             "halves the file size.",
         }
         if self.hw_menu is not None:
             tips[self.hw_menu] = ("GPU is much faster. CPU gives slightly better "

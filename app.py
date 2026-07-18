@@ -28,6 +28,7 @@ import theme
 from gui_build import BuildMixin
 from gui_config import ConfigMixin
 from gui_downloads import DownloadsMixin
+from gui_edits import EditsMixin
 from gui_notes import NotesMixin
 from gui_queue import QueueMixin
 from gui_run import RunMixin
@@ -38,8 +39,8 @@ from sysutil import resource_path, terminate_children
 _AppBase = (ctk.CTk, TkinterDnD.DnDWrapper) if _DND_AVAILABLE else (ctk.CTk,)
 
 
-class App(BuildMixin, QueueMixin, DownloadsMixin, NotesMixin, SettingsMixin,
-          RunMixin, ConfigMixin, *_AppBase):
+class App(BuildMixin, QueueMixin, EditsMixin, DownloadsMixin, NotesMixin,
+          SettingsMixin, RunMixin, ConfigMixin, *_AppBase):
     def __init__(self, fonts):
         super().__init__()
         self.fonts = fonts
@@ -94,6 +95,7 @@ class App(BuildMixin, QueueMixin, DownloadsMixin, NotesMixin, SettingsMixin,
         self._set_app_icon()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.bind("<Control-o>", lambda _e: self.on_add_files())
+        self.bind("<Control-v>", self._on_paste)
         self.bind("<Delete>", self._on_delete_key)
         self.bind("<Return>", self._on_return_key)
         self.bind("<Alt-Up>", lambda _e: self._move_selected(-1))

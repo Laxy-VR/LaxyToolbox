@@ -102,7 +102,10 @@ class NotesMixin:
             est = None
             if (job.status == "ready" and job.info is not None
                     and self._job_in_current_mode(job)):
-                est = estimate_output_bytes(job.info, mode, settings, size_mb, parts)
+                # A per-file trim (right click · Trim this file) wins over
+                # the shared trim fields, mirroring plan_job.
+                s = settings if job.trim is None else {**settings, "trim": job.trim}
+                est = estimate_output_bytes(job.info, mode, s, size_mb, parts)
                 est = int(est) if est else None
             if est != job.est_size:
                 job.est_size = est

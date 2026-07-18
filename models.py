@@ -7,7 +7,7 @@ import theme
 from probe import VideoInfo
 
 APP_NAME = "Laxy's Toolbox"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
@@ -118,6 +118,11 @@ CROP_OPTIONS = [("No crop", None),
                 ("Remove black bars", "auto"),
                 ("Vertical 9:16 (Shorts)", "9:16"),
                 ("Square 1:1", "1:1")]
+
+# Playback speed for the Compress tab (timelapses, slow motion). A speed
+# change re-times the audio with atempo, which always re-encodes it.
+SPEED_OPTIONS = [("1x (normal)", 1.0), ("0.25x", 0.25), ("0.5x", 0.5),
+                 ("1.5x", 1.5), ("2x", 2.0), ("4x", 4.0)]
 
 # Rotation/flip for phone videos recorded sideways. Values are ffmpeg filters.
 ROTATE_OPTIONS = [("No rotation", None),
@@ -342,6 +347,8 @@ class Job:
     out_size: int | None = None                  # total bytes written
     limit_mb: float | None = None                # per-file size limit (target/split)
     over_limit: bool = False                     # an output exceeded that limit
+    trim: tuple | None = None    # per-file (start, end) trim; wins over shared
+    crop: tuple | None = None    # per-file (w, h, x, y) crop from the crop box
     from_url: bool = False                       # arrived via the Download tab
     dl_cap: int | None = None                    # resolution cap chosen, None = best
     est_size: int | None = None                  # rough predicted output bytes

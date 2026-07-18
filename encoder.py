@@ -66,22 +66,54 @@ def _video_filters(settings: dict) -> str:
         parts.append(settings["denoise"])
     if settings.get("target_height"):
         parts.append(f"scale=-2:{settings['target_height']}")
-    if settings.get("target_fps"):
-        parts.append(f"fps={settings['target_fps']}")
-    if settings.get("subtitles"):
-        parts.append(_subtitles_filter(settings["subtitles"]))
+    speed = float(settings.get("speed") or 1.0)
+    if speed != 1.0:
+        # Subtitles burn in BEFORE the speed change: their clock follows the
+        # original timestamps, so re-timing first would desync them. Then
+        # setpts re-times the frames, and fps last locks the requested
+        # output rate (the GIF chain uses the same ordering).
+        if settings.get("subtitles"):
+            parts.append(_subtitles_filter(settings["subtitles"]))
+        parts.append(f"setpts=PTS/{speed}")
+        if settings.get("target_fps"):
+            parts.append(f"fps={settings['target_fps']}")
+    else:
+        if settings.get("target_fps"):
+            parts.append(f"fps={settings['target_fps']}")
+        if settings.get("subtitles"):
+            parts.append(_subtitles_filter(settings["subtitles"]))
     return ",".join(parts)
+
+
+def _atempo_chain(speed: float) -> list[str]:
+    """atempo filters matching a video speed change ([] at 1x). One atempo
+    covers 0.5x..100x; slower speeds chain halvings (0.25x = two 0.5x)."""
+    if speed == 1.0 or speed <= 0:
+        return []
+    chain = []
+    while speed < 0.5:
+        chain.append("atempo=0.5")
+        speed *= 2
+    chain.append(f"atempo={speed:g}")
+    return chain
 
 
 def _audio_args(settings: dict) -> list[str]:
     if settings["audio_mode"] == "none":
         return ["-an"]  # strip the audio track entirely
+    chain = _atempo_chain(float(settings.get("speed") or 1.0))
     if settings["audio_mode"] == "boost":
         # EBU R128 loudness normalisation lifts quiet audio (gameplay mics) to
         # a standard level; same filter as the Audio tab's Normalize. loudnorm
-        # resamples to 192 kHz internally, so pin a sane output rate.
-        return ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000",
+        # resamples to 192 kHz internally, so pin a sane output rate. It runs
+        # after any atempo so the loudness is measured on the final timing.
+        chain.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+        return ["-af", ",".join(chain), "-ar", "48000",
                 "-c:a", "aac", "-b:a", str(settings.get("audio_bitrate") or "192k")]
+    if chain:  # a speed change must re-time the audio, so copy re-encodes
+        bitrate = settings["audio_bitrate"] if settings["audio_mode"] == "aac" \
+            else "192k"
+        return ["-af", ",".join(chain), "-c:a", "aac", "-b:a", str(bitrate)]
     if settings["audio_mode"] == "copy":
         return ["-c:a", "copy"]
     return ["-c:a", "aac", "-b:a", str(settings["audio_bitrate"])]
@@ -220,16 +252,18 @@ def _track_args(settings: dict):
     n = int(settings.get("audio_track_count") or 0)
     if n < 2:
         return [], None  # nothing to mix; keep the default streams
-    graph = "".join(f"[0:a:{i}]" for i in range(n)) \
-        + f"amix=inputs={n}:duration=longest"
+    chain = ["".join(f"[0:a:{i}]" for i in range(n))
+             + f"amix=inputs={n}:duration=longest"]
+    chain += _atempo_chain(float(settings.get("speed") or 1.0))
     if settings["audio_mode"] == "boost":
-        graph += ",loudnorm=I=-16:TP=-1.5:LRA=11"
+        chain.append("loudnorm=I=-16:TP=-1.5:LRA=11")
         aargs = ["-ar", "48000", "-c:a", "aac",
                  "-b:a", str(settings.get("audio_bitrate") or "192k")]
     else:
         bitrate = settings["audio_bitrate"] if settings["audio_mode"] == "aac" \
             else "192k"
         aargs = ["-c:a", "aac", "-b:a", str(bitrate)]
+    graph = ",".join(chain)
     return (["-filter_complex", graph + "[aout]",
              "-map", "0:v:0", "-map", "[aout]"], aargs)
 
@@ -334,6 +368,8 @@ def build_gif_stages(input_path: str, output_path: str, settings: dict, segment=
     chain = []
     if settings.get("src_interlaced"):  # comb artifacts ruin palettes too
         chain.append("bwdif")
+    if settings.get("crop_filter"):  # per-file crop box; source geometry first
+        chain.append(settings["crop_filter"])
     if settings.get("src_hdr"):  # GIF/WebP palettes are SDR; tone map first
         chain.append(TONEMAP)
     # setpts before fps: after the speed change, fps drops (or duplicates)

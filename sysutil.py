@@ -85,6 +85,38 @@ def copy_files_to_clipboard(paths) -> bool:
     return True
 
 
+def clipboard_file_paths() -> list:
+    """File paths currently on the Windows clipboard (CF_HDROP), or [].
+
+    The mirror of copy_files_to_clipboard: lets Ctrl+V add files that were
+    copied in Explorer (or any app) straight into the queue.
+    """
+    if sys.platform != "win32":
+        return []
+    import ctypes
+    user32, shell32 = ctypes.windll.user32, ctypes.windll.shell32
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    shell32.DragQueryFileW.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                       ctypes.c_wchar_p, ctypes.c_uint]
+    CF_HDROP = 15
+    if not user32.OpenClipboard(None):
+        return []
+    paths = []
+    try:
+        handle = user32.GetClipboardData(CF_HDROP)
+        if handle:
+            count = shell32.DragQueryFileW(handle, 0xFFFFFFFF, None, 0)
+            for i in range(count):
+                n = shell32.DragQueryFileW(handle, i, None, 0)
+                buf = ctypes.create_unicode_buffer(n + 1)
+                shell32.DragQueryFileW(handle, i, buf, n + 1)
+                if buf.value:
+                    paths.append(buf.value)
+    finally:
+        user32.CloseClipboard()
+    return paths
+
+
 def set_keep_awake(on: bool):
     """Stop Windows from sleeping while a long encode runs (no-op elsewhere).
 

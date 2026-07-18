@@ -353,3 +353,72 @@ def test_gpu_target_safety_margin():
         assert reason is None
         cmd = " ".join(stages[-1][1])
         assert "_" + vendor in cmd or vendor == "nvenc" and "nvenc" in cmd
+
+
+# ---------- per-file trim and crop ----------
+def test_job_trim_wins_over_shared_trim():
+    job = make_job()
+    job.trim = (5.0, 25.0)
+    stages, _p, reason = plan_job(job, MODE_QUALITY,
+                                  settings(trim=(0.0, 10.0)), None)
+    assert reason is None
+    cmd = " ".join(stages[0][1])
+    assert "-ss 5.000" in cmd and "-t 20.000" in cmd
+    assert stages[0][2] == 20.0
+
+
+def test_job_trim_open_end():
+    job = make_job(duration=60)
+    job.trim = (50.0, None)
+    stages, _p, reason = plan_job(job, MODE_QUALITY, settings(), None)
+    assert reason is None and stages[0][2] == pytest.approx(10.0)
+
+
+def test_job_crop_wins_over_crop_menu():
+    job = make_job()
+    job.crop = (1280, 720, 320, 180)
+    stages, _p, reason = plan_job(job, MODE_QUALITY,
+                                  settings(crop="9:16"), None)
+    assert reason is None
+    cmd = " ".join(stages[0][1])
+    assert "crop=1280:720:320:180" in cmd and "9/16" not in cmd
+
+
+def test_cut_only_without_any_trim_fails_per_file():
+    stages, _p, reason = plan_job(make_job(), MODE_QUALITY,
+                                  settings(cut_only=True, trim=None), None)
+    assert stages is None and "no trim range" in reason
+
+
+def test_cut_only_uses_job_trim():
+    job = make_job()
+    job.trim = (5.0, 15.0)
+    stages, _p, reason = plan_job(job, MODE_QUALITY,
+                                  settings(cut_only=True, trim=None), None)
+    assert reason is None
+    assert "-c copy" in " ".join(stages[0][1])
+
+
+# ---------- speed on the output timeline ----------
+def test_speed_scales_progress_duration():
+    stages, _p, reason = plan_job(make_job(), MODE_QUALITY,
+                                  settings(speed=2.0), None)
+    assert reason is None and stages[0][2] == pytest.approx(30.0)  # 60s at 2x
+
+
+def test_speed_scales_target_bitrate():
+    """A 2x speed halves the output seconds, so the same size cap allows
+    roughly double the bitrate."""
+    def target_kbps(spd):
+        stages, _p, reason = plan_job(make_job(), MODE_TARGET,
+                                      settings(speed=spd), 10)
+        assert reason is None
+        cmd = " ".join(stages[-1][1])
+        return int(cmd.split("-b:v ")[1].split("k")[0])
+    assert target_kbps(2.0) == pytest.approx(2 * target_kbps(1.0), rel=0.15)
+
+
+def test_speed_shrinks_estimate():
+    est_1x = estimate_output_bytes(_info(), MODE_QUALITY, settings())
+    est_2x = estimate_output_bytes(_info(), MODE_QUALITY, settings(speed=2.0))
+    assert est_2x == pytest.approx(est_1x / 2)

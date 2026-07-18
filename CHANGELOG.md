@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.7.0 · 2026-07-18
+- **Trim each file separately**: right click a video · **Trim this file** for
+  a dialog with a range slider and live first/last frame previews. A per
+  file trim wins over the shared Trim fields, so every file in a batch can
+  keep its own range. Trimmed rows show a ✂ badge.
+- **Crop by drawing a box**: right click · **Crop this file** shows a real
+  frame; drag a rectangle over the part to keep. Wins over the Crop menu and
+  also applies to GIFs made from that file. Cropped rows show a ◱ badge.
+- **Paste into the queue**: Ctrl+V adds files copied in Explorer (or
+  anywhere) straight to the queue, and a copied link jumps to the Download
+  tab ready to go.
+- **Speed** (in Advanced): play videos at 0.25x to 4x. Audio is re-timed to
+  match, subtitles stay in sync, size targets account for the new length,
+  and 2x roughly halves the file size.
+
 ## v1.6.0 · 2026-07-18
 - **AMD and Intel GPU encoding.** The Hardware menu now offers NVIDIA
   (NVENC), AMD (AMF), and Intel (QSV) graphics cards for H.265, AV1, and

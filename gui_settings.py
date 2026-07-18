@@ -20,7 +20,8 @@ from models import (TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD,
                     SUBS_PICK, IMG_FORMAT_OPTIONS, IMG_QUALITY_OPTIONS,
                     IMG_RESIZE_OPTIONS, AUD_FORMAT_OPTIONS,
                     AUD_QUALITY_OPTIONS, RESOLUTIONS, FPS_OPTIONS,
-                    AUDIO_OPTIONS, DENOISE_OPTIONS, AUDIO_TRACK_OPTIONS)
+                    AUDIO_OPTIONS, DENOISE_OPTIONS, AUDIO_TRACK_OPTIONS,
+                    SPEED_OPTIONS)
 
 
 class SettingsMixin:
@@ -152,6 +153,7 @@ class SettingsMixin:
                    self.subs_menu, self.subs_menu_label,
                    self.crop_menu, self.crop_menu_label,
                    self.denoise_menu, self.denoise_menu_label,
+                   self.speed_menu, self.speed_menu_label,
                    self.sample_btn]
         if any(j.info and j.info.audio_tracks > 1 for j in self.jobs):
             widgets += [self.track_menu, self.track_menu_label]
@@ -272,6 +274,7 @@ class SettingsMixin:
             "encoder": self._hw_value(),  # "cpu" | "nvenc" | "amf" | "qsv"
             "denoise": dict(DENOISE_OPTIONS)[self.denoise_menu.get()],
             "audio_track": dict(AUDIO_TRACK_OPTIONS)[self.track_menu.get()],
+            "speed": dict(SPEED_OPTIONS)[self.speed_menu.get()],
             "crf": int(self.crf_slider.get()),
             "preset": self.preset_menu.get(),
             "target_height": dict(RESOLUTIONS)[self.res_menu.get()],
@@ -343,6 +346,7 @@ class SettingsMixin:
         self.crop_menu.configure(state="disabled" if cut else "normal")
         self.denoise_menu.configure(state="disabled" if cut else "normal")
         self.track_menu.configure(state="disabled" if cut else "normal")
+        self.speed_menu.configure(state="disabled" if cut else "normal")
         self.sample_btn.configure(state="disabled" if cut else "normal")
         self.mode_seg.configure(state="disabled" if cut else "normal")
 

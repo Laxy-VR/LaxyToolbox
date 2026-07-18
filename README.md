@@ -39,9 +39,12 @@ on your machine). Three modes:
 - **Split to fit** cuts a long video into parts that each fit under the limit.
 
 Optional **Trim** (start/end seconds) on any mode with live previews of the
-first and last frame you're keeping, a **Cut only** checkbox for instant
-lossless trimming, **Crop** (auto **black bar removal**, vertical **9:16**
-for Shorts, square **1:1**), **Rotate/flip** for sideways phone videos,
+first and last frame you're keeping, plus **per file trim** (right click ·
+Trim this file) so each video in a batch keeps its own range, a **Cut only**
+checkbox for instant lossless trimming, **Crop** (auto **black bar
+removal**, vertical **9:16** for Shorts, square **1:1**, or right click ·
+Crop this file and **drag a box on a real frame**), **Speed** (0.25x to 4x
+with audio re-timed to match), **Rotate/flip** for sideways phone videos,
 **burn in subtitles** (auto finds a matching .srt/.ass/.vtt next to each
 video, or pick a file), a **Boost quiet audio** option that fixes a too
 quiet mic while compressing, and **Remove audio** for gameplay clips.
@@ -77,7 +80,9 @@ every video a link points to. Downloads land in your output folder and are not
 re-compressed automatically (sites already compress their videos); right click
 one to queue it. DRM protected content is not supported.
 
-**Everywhere:** drag and drop files or folders, mixed batches, thumbnail
+**Everywhere:** drag and drop files or folders, **paste with Ctrl+V**
+(copied files join the queue; a copied link opens the Download tab), mixed
+batches, thumbnail
 previews, a rough **predicted output size on every queued file** (and the
 batch total) before you start, live progress with speed, time remaining, and
 **real taskbar progress**, per file savings and batch totals, one-click

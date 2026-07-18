@@ -20,7 +20,7 @@ from models import (APP_NAME, APP_VERSION, GITHUB_REPO, MODE_QUALITY,
                     MODE_TARGET, MODE_SPLIT, MODE_GIF, MODE_IMAGE, MODE_AUDIO,
                     MODE_DOWNLOAD, PARTS_OPTIONS, GIF_FORMAT_OPTIONS,
                     GIF_OUT_EXT, IMG_FORMAT_OPTIONS, AUD_FORMAT_OPTIONS,
-                    Job, unique_path, friendly_error, human_size,
+                    Job, SPEED_OPTIONS, unique_path, friendly_error, human_size,
                     is_image, is_audio, parse_time)
 from planner import plan_job, trimmed_duration
 from probe import gpu_works, recommend_settings
@@ -95,7 +95,8 @@ class RunMixin:
             if ts > 0 or te is not None:
                 settings["trim"] = (ts, te)
             settings["cut_only"] = self._cut_only()
-            if settings["cut_only"] and settings["trim"] is None:
+            if settings["cut_only"] and settings["trim"] is None \
+                    and not any(j.trim for j in jobs):
                 self.status.configure(text="Set a trim range to cut (start and/or end).")
                 return
 
@@ -179,8 +180,11 @@ class RunMixin:
         if mode != MODE_SPLIT:
             return [os.path.join(folder, f"{stem}_h265.mp4")]
         w, h, fps = self._effective_res_fps(job.info)
-        dur = trimmed_duration(job.info.duration, trim)
-        n = parts_choice or suggest_parts(dur, size_mb, w, h, fps)
+        # Match plan_job: a per-file trim wins, and a speed change shrinks
+        # the output timeline the parts must cover.
+        dur = trimmed_duration(job.info.duration, job.trim or trim)
+        spd = dict(SPEED_OPTIONS)[self.speed_menu.get()] or 1.0
+        n = parts_choice or suggest_parts(dur / spd, size_mb, w, h, fps)
         return [os.path.join(folder, f"{stem}_part{i + 1}_h265.mp4") for i in range(n)]
 
     def _encode_worker(self, jobs, mode, base_settings, size_mb):
@@ -467,6 +471,7 @@ class RunMixin:
         # treats the sample exactly like the real encode would.
         sample = Job(id=-1000 - job.id, path=job.path)
         sample.info = job.info
+        sample.crop = job.crop  # the sample should show the cropped picture
         sample.outputs = [out]
         self._sample_files.append(out)
         self._sample_cancel.clear()

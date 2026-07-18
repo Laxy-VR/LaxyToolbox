@@ -616,3 +616,49 @@ def test_audio_opus_in_ogg():
                                     {"aud_format": "opus",
                                      "aud_bitrate": "128k"}))[0]
     assert "libopus" in cmd and "-b:a 128k" in cmd and "-vn" in cmd
+
+
+# ---------- video speed ----------
+def test_speed_video_and_audio_chain():
+    """2x: setpts halves the pts, atempo re-times audio (forcing AAC even
+    from copy), and fps comes AFTER setpts so the output rate is honoured."""
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(speed=2.0, target_fps=30), "quality"))[0]
+    assert "setpts=PTS/2.0,fps=30" in cmd
+    assert "-af atempo=2" in cmd
+    assert "-c:a aac" in cmd and "-c:a copy" not in cmd
+
+
+def test_speed_quarter_chains_atempo():
+    """0.25x is below atempo's floor, so it chains two 0.5x stages."""
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(speed=0.25), "quality"))[0]
+    assert "atempo=0.5,atempo=0.5" in cmd
+
+
+def test_speed_subtitles_burn_before_retime():
+    """Subtitles render on the original clock, so the burn-in must come
+    before setpts (after it they would drift)."""
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(speed=2.0, subtitles="s.srt"), "quality"))[0]
+    assert cmd.index("subtitles=") < cmd.index("setpts=")
+
+
+def test_speed_1x_leaves_everything_alone():
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(speed=1.0), "quality"))[0]
+    assert "setpts" not in cmd and "atempo" not in cmd and "-c:a copy" in cmd
+
+
+def test_speed_with_mix_joins_graph():
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(speed=2.0, audio_track="mix",
+                                    audio_track_count=2), "quality"))[0]
+    assert "amix=inputs=2:duration=longest,atempo=2" in cmd
+
+
+def test_gif_crop_filter_applies():
+    """A per-file crop box also crops GIFs made from that file."""
+    cmds = joined(build_gif_stages("in.mp4", "out.gif",
+                                   {"gif_format": "gif", "gif_dither": "none",
+                                    "crop_filter": "crop=640:640:100:0"}))
+    assert "crop=640:640:100:0" in cmds[0]

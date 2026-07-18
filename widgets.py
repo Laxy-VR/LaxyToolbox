@@ -219,6 +219,14 @@ class QueueRow(ctk.CTkFrame):
     def render(self, selected: bool):
         text, color = status_display(self.job)
         self.status.configure(text=text, text_color=color)
+        # Per-file trim/crop badges. The name is only rewritten when the
+        # badges change, so live text (playlist progress) is not clobbered.
+        marks = ("  ✂" if self.job.trim else "") + ("  ◱" if self.job.crop else "")
+        if marks != getattr(self, "_marks", ""):
+            self._marks = marks
+            self.name.configure(
+                text=f"{kind_icon(self.job.path)}  "
+                     f"{os.path.basename(self.job.path)}{marks}")
         if self.job.status == "done":
             self.bar.set(1.0)
             self.bar.configure(progress_color=theme.SUCCESS)

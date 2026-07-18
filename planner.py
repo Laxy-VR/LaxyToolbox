@@ -61,6 +61,12 @@ def plan_job(job, mode, base_settings, size_mb):
     settings["src_hdr"] = job.info.is_hdr
     settings["src_interlaced"] = job.info.is_interlaced
     settings["audio_track_count"] = job.info.audio_tracks
+    # A crop drawn on this file (the crop box dialog) wins over the shared
+    # Crop menu; it also applies to GIFs made from this file.
+    if job.crop:
+        w, h, x, y = job.crop
+        settings["crop_filter"] = f"crop={w}:{h}:{x}:{y}"
+        settings["crop"] = None
     dur = job.info.duration
     if settings["audio_mode"] == "none":
         audio_kbps = 0
@@ -99,8 +105,9 @@ def plan_job(job, mode, base_settings, size_mb):
                       segment=(start, length))]
         return stages, [], None
 
-    # Video modes share the optional trim: encode only start..end seconds.
-    trim = settings.get("trim")
+    # Video modes trim to start..end seconds. A trim set on this file
+    # (right click · Trim this file) wins over the shared trim fields.
+    trim = job.trim or settings.get("trim")
     t0 = min(trim[0], max(dur - 0.1, 0)) if (trim and dur > 0) \
         else (trim[0] if trim else 0.0)
     dur_eff = trimmed_duration(dur, trim)
@@ -109,9 +116,16 @@ def plan_job(job, mode, base_settings, size_mb):
     seg_all = (t0, dur_eff) if trim else None
 
     if settings.get("cut_only"):  # lossless stream copy of the trim range
+        if not trim:
+            return None, [], "no trim range set for this file"
         stages = [(lbl, cmd, dur_eff) for lbl, cmd in
                   build_cut_stages(job.path, job.outputs[0], seg_all)]
         return stages, [], None
+
+    # A speed change stretches or shrinks the OUTPUT timeline: progress and
+    # size targeting must both work in output seconds.
+    spd = float(settings.get("speed") or 1.0)
+    dur_out = dur_eff / spd if spd > 0 else dur_eff
 
     # Re-encoding modes can burn in subtitles; resolved per file here so
     # "auto" finds each video's own matching subtitle in a batch.
@@ -131,7 +145,7 @@ def plan_job(job, mode, base_settings, size_mb):
                 settings["crop_filter"] = f"crop={w}:{h}:{x}:{y}"
 
     if mode == MODE_QUALITY:
-        stages = [(lbl, cmd, dur_eff) for lbl, cmd
+        stages = [(lbl, cmd, dur_out) for lbl, cmd
                   in build_stages(job.path, job.outputs[0], settings, "quality",
                                   segment=seg_all)]
         return stages, [], None
@@ -144,7 +158,7 @@ def plan_job(job, mode, base_settings, size_mb):
         return s
 
     if mode == MODE_TARGET:
-        vkbps = video_bitrate_for_target(dur_eff, size_mb, audio_kbps, safety)
+        vkbps = video_bitrate_for_target(dur_out, size_mb, audio_kbps, safety)
         if dur_eff <= 0 or vkbps < 50:
             return None, [], "target too small for this file"
         # When the cap is far above what this video needs at the chosen
@@ -162,11 +176,11 @@ def plan_job(job, mode, base_settings, size_mb):
             # absurd values (a 500 MB cap on a 3s clip is ~1.3M kbps, whose
             # doubled bufsize overflows ffmpeg's 32-bit field).
             s["vbv_maxrate"] = int(min(vkbps, quality_kbps * 4))
-            stages = [(lbl, cmd, dur_eff) for lbl, cmd in build_stages(
+            stages = [(lbl, cmd, dur_out) for lbl, cmd in build_stages(
                 job.path, job.outputs[0], s, "quality", segment=seg_all)]
             return stages, [], None
         passlog = os.path.join(tempfile.gettempdir(), f"vc_{os.getpid()}_{job.id}_pass")
-        stages = [(lbl, cmd, dur_eff) for lbl, cmd in build_stages(
+        stages = [(lbl, cmd, dur_out) for lbl, cmd in build_stages(
             job.path, job.outputs[0], size_settings(vkbps), "target",
             passlog=passlog, segment=seg_all)]
         return stages, [passlog], None
@@ -175,8 +189,9 @@ def plan_job(job, mode, base_settings, size_mb):
     n = len(job.outputs)
     if dur_eff <= 0 or n < 1:
         return None, [], "cannot split this file"
-    seg = dur_eff / n
-    vkbps = video_bitrate_for_target(seg, size_mb, audio_kbps, safety)
+    seg = dur_eff / n              # input seconds per part
+    seg_out = seg / spd if spd > 0 else seg  # output seconds (speed applied)
+    vkbps = video_bitrate_for_target(seg_out, size_mb, audio_kbps, safety)
     if vkbps < 50:
         return None, [], "parts still too big; raise the size or the part count"
     s = size_settings(vkbps)
@@ -187,7 +202,8 @@ def plan_job(job, mode, base_settings, size_mb):
         passlog = os.path.join(tempfile.gettempdir(), f"vc_{os.getpid()}_{job.id}_p{i}")
         for lbl, cmd in build_stages(job.path, out, s, "target",
                                      passlog=passlog, segment=(start, part_dur)):
-            stages.append((f"part {i + 1} {lbl}", cmd, part_dur))
+            stages.append((f"part {i + 1} {lbl}", cmd,
+                           part_dur / spd if spd > 0 else part_dur))
         passlogs.append(passlog)
     return stages, passlogs, None
 
@@ -286,8 +302,13 @@ def estimate_output_bytes(info, mode, settings, size_mb=None,
             return None
         return info.size_bytes * dur_eff / info.duration
 
+    # A speed change shrinks (or stretches) the output timeline, and bytes
+    # follow the output seconds.
+    spd = float(settings.get("speed") or 1.0)
+    dur_o = dur_eff / spd if spd > 0 else dur_eff
+
     if mode == MODE_SPLIT and size_mb:
-        n = parts_choice or suggest_parts(dur_eff, size_mb, w, h, fps)
+        n = parts_choice or suggest_parts(dur_o, size_mb, w, h, fps)
         return n * size_mb * 1024 * 1024 * 0.95
 
     # Quality (CRF/CQ) model: x265 bits-per-pixel per codec. Target size mode
@@ -301,7 +322,7 @@ def estimate_output_bytes(info, mode, settings, size_mb=None,
     audio_mode = settings.get("audio_mode", "copy")
     akbps = 0 if audio_mode in ("copy", "none") \
         else int(str(settings.get("audio_bitrate", "128k")).rstrip("k"))
-    quality_bytes = (vkbps + akbps) * 1000 * dur_eff / 8
+    quality_bytes = (vkbps + akbps) * 1000 * dur_o / 8
     if mode == MODE_TARGET and size_mb:
         return min(quality_bytes, size_mb * 1024 * 1024 * 0.95)
     return quality_bytes
