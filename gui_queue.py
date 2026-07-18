@@ -128,6 +128,7 @@ class QueueMixin:
         self.jobs.remove(job)
         if self.selected_id == job.id:
             self.selected_id = None
+            self._clear_previews()  # drop the removed file's frames
             nxt = next((j for j in self.jobs if j.info), None)
             if nxt:
                 self._select_job(nxt)
@@ -149,6 +150,7 @@ class QueueMixin:
         self.jobs.clear()
         self.selected_id = None
         self._prefilled = False
+        self._clear_previews()
         self.detail_label.configure(text="")
         self.note_label.configure(text="")
         self.empty_label.pack(pady=30)
@@ -174,6 +176,7 @@ class QueueMixin:
             return  # nothing finished
         self.jobs = remaining
         if self.selected_id is None:  # reselect something, or clear the details
+            self._clear_previews()  # the previewed row was among the swept
             nxt = next((j for j in self.jobs if j.info), None)
             if nxt:
                 self._select_job(nxt)

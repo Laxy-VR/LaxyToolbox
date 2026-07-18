@@ -346,6 +346,24 @@ class NotesMixin:
                             self.trim_preview)
         self._request_thumb(job.path, max(end - 0.05, 0), self.trim_preview_end)
 
+    def _clear_previews(self):
+        """Reset every preview thumbnail to its placeholder text (the
+        previewed file was removed, or the queue was cleared). Bumping the
+        tokens also discards any frame extraction still in flight, so a slow
+        ffmpeg can't repaint a removed file's frame afterwards."""
+        for target, text in ((self.gif_preview, "start"),
+                             (self.gif_preview_end, "end"),
+                             (self.trim_preview, "start"),
+                             (self.trim_preview_end, "end"),
+                             (self.img_preview, "preview")):
+            self._thumb_tokens[target] = self._thumb_tokens.get(target, 0) + 1
+            target.configure(image=None, text=text)
+            # CTkLabel's image=None doesn't detach the image from the inner
+            # Tk label; drop it there too, or the garbage-collected CTkImage
+            # leaves a dangling "pyimage" that breaks the next configure.
+            target._label.configure(image="")
+            self._thumb_images.pop(target, None)
+
     def _request_thumb(self, path, seconds, target):
         token = self._thumb_tokens.get(target, 0) + 1
         self._thumb_tokens[target] = token
