@@ -27,8 +27,9 @@ double click it. No Python, no ffmpeg, no installer needed.
 ## What it does
 
 **🎬 Compress** · Re-encode videos to **H.265** (recommended), **AV1**
-(smallest), or **H.264** (max compatibility), on CPU or NVIDIA GPU. Three
-modes:
+(smallest), or **H.264** (max compatibility), on CPU or on an **NVIDIA, AMD,
+or Intel GPU** (each is offered only after a real test encode proves it works
+on your machine). Three modes:
 - **Best quality** picks settings from the video's own metadata for the
   smallest file with no visible quality loss, and predicts the output size.
 - **Target size** fits any video under a limit (500 MB for Discord Nitro,
@@ -44,8 +45,12 @@ for Shorts, square **1:1**), **Rotate/flip** for sideways phone videos,
 **burn in subtitles** (auto finds a matching .srt/.ass/.vtt next to each
 video, or pick a file), a **Boost quiet audio** option that fixes a too
 quiet mic while compressing, and **Remove audio** for gameplay clips.
-HDR videos keep their 10 bit color on H.265/AV1 and are properly tone mapped
-otherwise.
+Multi track recordings (OBS with game and mic separate) can keep one
+**audio track or mix them all**, a **Denoise** option makes grainy footage
+compress far better, **Test a 5s sample** encodes five seconds from the
+middle so you can judge quality before a long encode, and interlaced sources
+are **deinterlaced automatically**. HDR videos keep their 10 bit color on
+H.265/AV1 and are properly tone mapped otherwise.
 
 **🎞 GIF** · Turn a clip into a loop: classic **GIF**, **animated WebP**
 (much smaller), or a silent **MP4 loop** (smallest). Scrub to the start frame
@@ -93,9 +98,10 @@ green, teal, rose, or amber) via the gear button.
   your network: set the **Cookies** option on the Download tab to a browser
   you are signed in with, or retry later. The full log of the last download is in
   `%LOCALAPPDATA%\LaxyCompressor\last_download.log`.
-- **The GPU option is missing.** The app verifies GPU encoding with a real
-  test encode on first launch. No NVIDIA GPU (or a very old driver) means the
-  option is hidden and everything runs on CPU.
+- **The GPU option is missing.** The app verifies each GPU brand (NVIDIA,
+  AMD, Intel) with a real test encode on first launch. Brands that fail (no
+  such GPU, or a very old driver) are hidden; with no working GPU everything
+  runs on CPU.
 - **Compressing a downloaded video makes it bigger.** Platform videos are
   already heavily compressed; the app tells you this in its notes. Compress
   your own recordings, not re-downloads, for real savings.

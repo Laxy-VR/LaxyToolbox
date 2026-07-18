@@ -23,8 +23,9 @@ from models import (APP_NAME, APP_VERSION, TAB_COMPRESS, TAB_GIF, TAB_IMAGE,
                     SUBS_NONE, SUBS_AUTO, SUBS_PICK, IMG_FORMAT_OPTIONS,
                     IMG_QUALITY_OPTIONS, IMG_RESIZE_OPTIONS,
                     AUD_FORMAT_OPTIONS, AUD_QUALITY_OPTIONS, PARTS_OPTIONS,
-                    PRESETS, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS)
-from probe import gpu_codecs, has_gifsicle
+                    PRESETS, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS,
+                    DENOISE_OPTIONS, AUDIO_TRACK_OPTIONS)
+from probe import gpu_vendors, has_gifsicle
 from sysutil import resource_path
 from widgets import Tooltip, RangeSlider, QueueRow
 
@@ -183,8 +184,7 @@ class BuildMixin:
         self.url_entry.insert(0, url)
         if playlist:
             self.dl_playlist_check.select()
-        if self._gpu_ok is False:
-            self._hide_gpu_option()
+        self._refresh_hw_menu()  # drop vendors that failed their probe
         selected = self._selected_job()
         if selected is not None:
             self._select_job(selected)
@@ -440,12 +440,15 @@ class BuildMixin:
                                       pady=(6, 0))
 
         # Codec + hardware selectors, side by side. The hardware menu only
-        # exists when this machine has any NVENC encoder at all.
-        self._gpu_codecs = gpu_codecs()
+        # exists when this ffmpeg build has any GPU encoder at all; vendors
+        # that fail their real test encode are dropped by _refresh_hw_menu.
+        self._gpu_codecs = gpu_vendors()  # vendor -> set of codecs in build
         self._menu_row(card, 3, 0, "Codec", [c[0] for c in CODEC_OPTIONS],
                        CODEC_OPTIONS[0][0], "codec_menu", self._on_codec_change)
         if self._gpu_codecs:
-            self._menu_row(card, 3, 2, "Hardware", [h[0] for h in HW_OPTIONS],
+            self._menu_row(card, 3, 2, "Hardware",
+                           [label for label, v in HW_OPTIONS
+                            if v == "cpu" or v in self._gpu_codecs],
                            HW_OPTIONS[0][0], "hw_menu", self._on_codec_change)
         else:
             self.hw_menu = None
@@ -489,10 +492,24 @@ class BuildMixin:
                        SUBS_NONE, "subs_menu", self._on_subs_change)
         self._menu_row(card, 11, 0, "Crop", [c[0] for c in CROP_OPTIONS],
                        CROP_OPTIONS[0][0], "crop_menu", self._on_setting_changed)
+        self._menu_row(card, 11, 2, "Denoise", [d[0] for d in DENOISE_OPTIONS],
+                       DENOISE_OPTIONS[0][0], "denoise_menu", self._on_setting_changed)
+        # Only shown when a queued file has more than one audio track.
+        self._menu_row(card, 12, 0, "Audio track",
+                       [t[0] for t in AUDIO_TRACK_OPTIONS],
+                       AUDIO_TRACK_OPTIONS[0][0], "track_menu",
+                       self._on_setting_changed)
+        # Encode 5 seconds from the middle with the current settings, to
+        # judge quality before committing to a long encode.
+        self.sample_btn = ctk.CTkButton(
+            card, text="Test a 5s sample", width=130, height=24,
+            fg_color="transparent", hover_color=theme.SURFACE2,
+            text_color=theme.TEXT_MUTED, command=self.on_sample)
+        self.sample_btn.grid(row=12, column=3, sticky="e", padx=14)
 
         # Optional trim (Compress tab only): encode just start..end seconds
         self.trim_frame = ctk.CTkFrame(card, fg_color="transparent")
-        self.trim_frame.grid(row=12, column=0, columnspan=4, sticky="w",
+        self.trim_frame.grid(row=13, column=0, columnspan=4, sticky="w",
                              padx=14, pady=(2, 0))
         trim_left = ctk.CTkFrame(self.trim_frame, fg_color="transparent")
         trim_left.grid(row=0, column=0, sticky="nw")
@@ -534,7 +551,7 @@ class BuildMixin:
         self.note_label = ctk.CTkLabel(card, text="", anchor="w", justify="left",
                                        wraplength=620, text_color=theme.NOTE,
                                        font=self.f("sans", 12))
-        self.note_label.grid(row=13, column=0, columnspan=4, sticky="w",
+        self.note_label.grid(row=14, column=0, columnspan=4, sticky="w",
                              padx=14, pady=(4, 12))
 
         # Output folder
@@ -613,10 +630,21 @@ class BuildMixin:
             self.img_strip_check: "Removes hidden info like camera model, date, "
                                   "and GPS location. Good idea before sharing "
                                   "photos publicly.",
+            self.denoise_menu: "Softens film grain and sensor noise. Grainy "
+                               "footage compresses far better with Light on, "
+                               "so files also get smaller.",
+            self.track_menu: "Files with several audio tracks (OBS: game and "
+                             "mic separate): keep one track, or mix them all "
+                             "into one.",
+            self.sample_btn: "Encodes 5 seconds from the middle of the "
+                             "selected video with the current settings and "
+                             "opens it, so you can judge quality before a "
+                             "long encode.",
         }
         if self.hw_menu is not None:
             tips[self.hw_menu] = ("GPU is much faster. CPU gives slightly better "
-                                  "quality per megabyte.")
+                                  "quality per megabyte. Only graphics cards "
+                                  "that pass a real test encode are listed.")
         for widget, text in tips.items():
             try:
                 Tooltip(widget, text, fam)

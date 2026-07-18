@@ -20,7 +20,7 @@ from models import (TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO, TAB_DOWNLOAD,
                     SUBS_PICK, IMG_FORMAT_OPTIONS, IMG_QUALITY_OPTIONS,
                     IMG_RESIZE_OPTIONS, AUD_FORMAT_OPTIONS,
                     AUD_QUALITY_OPTIONS, RESOLUTIONS, FPS_OPTIONS,
-                    AUDIO_OPTIONS)
+                    AUDIO_OPTIONS, DENOISE_OPTIONS, AUDIO_TRACK_OPTIONS)
 
 
 class SettingsMixin:
@@ -138,17 +138,24 @@ class SettingsMixin:
                    self.audio_menu, self.audio_menu_label,
                    self.codec_menu, self.codec_menu_label,
                    self.res_menu, self.res_menu_label]
-        if self.hw_menu is not None and self._gpu_ok is not False:
+        if self.hw_menu is not None and len(self._available_hw()) > 1:
             widgets += [self.hw_menu, self.hw_menu_label]
         return widgets
 
     def _compress_advanced_widgets(self):
         """Compress controls tucked behind the Advanced toggle (fps is handled
-        separately: it stays visible on the GIF tab where it matters most)."""
-        return [self.preset_menu, self.preset_menu_label,
-                self.rotate_menu, self.rotate_menu_label,
-                self.subs_menu, self.subs_menu_label,
-                self.crop_menu, self.crop_menu_label]
+        separately: it stays visible on the GIF tab where it matters most).
+        The audio track menu only appears when a queued file actually has
+        more than one audio track, so it never clutters the common case."""
+        widgets = [self.preset_menu, self.preset_menu_label,
+                   self.rotate_menu, self.rotate_menu_label,
+                   self.subs_menu, self.subs_menu_label,
+                   self.crop_menu, self.crop_menu_label,
+                   self.denoise_menu, self.denoise_menu_label,
+                   self.sample_btn]
+        if any(j.info and j.info.audio_tracks > 1 for j in self.jobs):
+            widgets += [self.track_menu, self.track_menu_label]
+        return widgets
 
     def _toggle_advanced(self):
         self._advanced_open = not self._advanced_open
@@ -204,28 +211,56 @@ class SettingsMixin:
     def _codec_value(self):
         return dict(CODEC_OPTIONS)[self.codec_menu.get()]
 
+    def _available_hw(self):
+        """(label, value) hardware choices usable right now: CPU plus every
+        GPU vendor whose encoders exist in this ffmpeg build and that has not
+        failed its real test encode probe."""
+        opts = [HW_OPTIONS[0]]
+        for label, vendor in HW_OPTIONS[1:]:
+            if vendor in self._gpu_codecs and self._gpu_ok.get(vendor) is not False:
+                opts.append((label, vendor))
+        return opts
+
     def _hw_value(self):
-        """'cpu' or 'nvenc', falling back to cpu when the GPU can't do the codec
-        or the machine failed the real NVENC probe."""
-        if self.hw_menu is None or self._gpu_ok is False:
+        """The settings encoder value ('cpu', 'nvenc', 'amf', 'qsv'), falling
+        back to cpu when the chosen vendor failed its probe or cannot
+        hardware-encode the current codec."""
+        if self.hw_menu is None:
             return "cpu"
-        hw = dict(HW_OPTIONS)[self.hw_menu.get()]
-        if hw == "nvenc" and self._codec_value() not in self._gpu_codecs:
+        hw = dict(HW_OPTIONS).get(self.hw_menu.get(), "cpu")
+        if hw != "cpu" and (self._gpu_ok.get(hw) is False
+                            or self._codec_value() not in self._gpu_codecs.get(hw, ())):
             return "cpu"
         return hw
 
     def _on_codec_change(self, _value=None):
-        nvenc = self._hw_value() == "nvenc"
-        self.crf_caption.configure(text="Quality (CQ)" if nvenc else "Quality (CRF)")
-        # Offer the GPU only for codecs this machine can hardware-encode.
+        gpu = self._hw_value() != "cpu"
+        self.crf_caption.configure(text="Quality (CQ)" if gpu else "Quality (CRF)")
+        # Offer each GPU vendor only for codecs it can hardware-encode here.
         if self.hw_menu is not None:
-            if self._codec_value() in self._gpu_codecs:
-                self.hw_menu.configure(values=[h[0] for h in HW_OPTIONS])
-            else:
-                self.hw_menu.set(HW_OPTIONS[0][0])
-                self.hw_menu.configure(values=[HW_OPTIONS[0][0]])
+            codec = self._codec_value()
+            values = [label for label, v in self._available_hw()
+                      if v == "cpu" or codec in self._gpu_codecs.get(v, ())]
+            current = self.hw_menu.get()
+            self.hw_menu.configure(values=values)
+            if current not in values:
+                self.hw_menu.set(values[0])
         self._sync_controls()
         self._update_note()
+
+    def _refresh_hw_menu(self):
+        """Re-sync the Hardware menu after a probe verdict arrives: drop the
+        failed vendor, and hide the menu entirely when only CPU remains."""
+        if self.hw_menu is None:
+            return
+        if len(self._available_hw()) > 1:
+            self._on_codec_change()
+            return
+        self.hw_menu.set(HW_OPTIONS[0][0])
+        self.hw_menu.grid_remove()
+        self.hw_menu_label.grid_remove()
+        self.crf_caption.configure(text="Quality (CRF)")
+        self._sync_controls()
 
     # ---------- helpers ----------
     def _collect_settings(self) -> dict:
@@ -234,7 +269,9 @@ class SettingsMixin:
         gif_size = dict(GIF_SIZE_OPTIONS)[self.gif_size_menu.get()]
         return {
             "codec": self._codec_value(),
-            "encoder": self._hw_value(),  # "cpu" or "nvenc"
+            "encoder": self._hw_value(),  # "cpu" | "nvenc" | "amf" | "qsv"
+            "denoise": dict(DENOISE_OPTIONS)[self.denoise_menu.get()],
+            "audio_track": dict(AUDIO_TRACK_OPTIONS)[self.track_menu.get()],
             "crf": int(self.crf_slider.get()),
             "preset": self.preset_menu.get(),
             "target_height": dict(RESOLUTIONS)[self.res_menu.get()],
@@ -293,17 +330,20 @@ class SettingsMixin:
         gif = self._mode() == MODE_GIF
         cut = self._cut_only()  # lossless cut ignores every encode setting
         off = gif or cut
-        nvenc = self._hw_value() == "nvenc"
+        gpu = self._hw_value() != "cpu"
         self.codec_menu.configure(state="disabled" if off else "normal")
         if self.hw_menu is not None:
             self.hw_menu.configure(state="disabled" if off else "normal")
-        self.preset_menu.configure(state="disabled" if (off or nvenc) else "normal")
+        self.preset_menu.configure(state="disabled" if (off or gpu) else "normal")
         self.audio_menu.configure(state="disabled" if off else "normal")
         self.res_menu.configure(state="disabled" if cut else "normal")
         self.fps_menu.configure(state="disabled" if cut else "normal")
         self.rotate_menu.configure(state="disabled" if cut else "normal")
         self.subs_menu.configure(state="disabled" if cut else "normal")
         self.crop_menu.configure(state="disabled" if cut else "normal")
+        self.denoise_menu.configure(state="disabled" if cut else "normal")
+        self.track_menu.configure(state="disabled" if cut else "normal")
+        self.sample_btn.configure(state="disabled" if cut else "normal")
         self.mode_seg.configure(state="disabled" if cut else "normal")
 
     def _apply_recommended(self, rec):

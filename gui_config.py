@@ -33,10 +33,12 @@ class ConfigMixin:
             if menu is not None and cfg.get(key) in menu.cget("values"):
                 menu.set(cfg[key])
 
-        if isinstance(cfg.get("nvenc_ok"), bool):
-            self._gpu_ok = cfg["nvenc_ok"]
-            if self._gpu_ok is False:
-                self._hide_gpu_option()
+        ok = cfg.get("gpu_ok")
+        if isinstance(ok, dict):
+            self._gpu_ok = {k: v for k, v in ok.items() if isinstance(v, bool)}
+        elif isinstance(cfg.get("nvenc_ok"), bool):  # pre-1.6 single GPU cache
+            self._gpu_ok = {"nvenc": cfg["nvenc_ok"]}
+        self._refresh_hw_menu()
         if cfg.get("tab") in (TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO,
                               TAB_DOWNLOAD):
             self.tab_seg.set(cfg["tab"])
@@ -49,6 +51,8 @@ class ConfigMixin:
         set_menu(self.parts_menu, "parts")
         set_menu(self.rotate_menu, "rotate")
         set_menu(self.crop_menu, "crop")
+        set_menu(self.denoise_menu, "denoise")
+        set_menu(self.track_menu, "audio_track")
         set_menu(self.dither_menu, "dither")
         set_menu(self.gif_format_menu, "gif_format")
         set_menu(self.gif_speed_menu, "gif_speed")
@@ -112,6 +116,8 @@ class ConfigMixin:
             "codec": self.codec_menu.get(),
             "rotate": self.rotate_menu.get(),
             "crop": self.crop_menu.get(),
+            "denoise": self.denoise_menu.get(),
+            "audio_track": self.track_menu.get(),
             "dither": self.dither_menu.get(),
             "gif_format": self.gif_format_menu.get(),
             "gif_speed": self.gif_speed_menu.get(),
@@ -135,8 +141,8 @@ class ConfigMixin:
             "advanced": self._advanced_open,
             "accent": theme.ACCENT_NAME,
         }
-        if self._gpu_ok is not None:
-            cfg["nvenc_ok"] = self._gpu_ok
+        if self._gpu_ok:
+            cfg["gpu_ok"] = self._gpu_ok
         if self.hw_menu is not None:
             cfg["hardware"] = self.hw_menu.get()
         if self._user_presets:
@@ -165,6 +171,8 @@ class ConfigMixin:
             "fps": self.fps_menu.get(), "parts": self.parts_menu.get(),
             "audio": self.audio_menu.get(), "dither": self.dither_menu.get(),
             "rotate": self.rotate_menu.get(), "crop": self.crop_menu.get(),
+            "denoise": self.denoise_menu.get(),
+            "audio_track": self.track_menu.get(),
             "gif_format": self.gif_format_menu.get(),
             "gif_speed": self.gif_speed_menu.get(),
             "gif_direction": self.gif_direction_menu.get(),
@@ -226,6 +234,8 @@ class ConfigMixin:
         menu(self.dither_menu, "dither")
         menu(self.rotate_menu, "rotate")
         menu(self.crop_menu, "crop")
+        menu(self.denoise_menu, "denoise")
+        menu(self.track_menu, "audio_track")
         menu(self.gif_format_menu, "gif_format")
         menu(self.gif_speed_menu, "gif_speed")
         menu(self.gif_direction_menu, "gif_direction")

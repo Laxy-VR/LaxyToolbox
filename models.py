@@ -7,7 +7,7 @@ import theme
 from probe import VideoInfo
 
 APP_NAME = "Laxy's Toolbox"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
@@ -60,7 +60,26 @@ BUILTIN_PRESETS = {
     "Smallest file · AV1": {"tab": "Compress", "mode": "Target size", "size": "25",
                             "codec": "AV1 (smallest, modern devices)"},
 }
-HW_OPTIONS = [("CPU (best quality)", "cpu"), ("GPU (fastest)", "nvenc")]
+# Hardware menu. Only vendors whose encoders exist in the bundled ffmpeg AND
+# pass a real test encode on this machine are offered (see probe.gpu_works).
+HW_OPTIONS = [("CPU (best quality)", "cpu"),
+              ("NVIDIA GPU (fastest)", "nvenc"),
+              ("AMD GPU (fastest)", "amf"),
+              ("Intel GPU (fast)", "qsv")]
+
+# Denoise (hqdn3d). Film grain and sensor noise eat bitrate; a light denoise
+# makes grainy footage compress dramatically better at the same quality.
+DENOISE_OPTIONS = [("No denoise", None),
+                   ("Light", "hqdn3d=2:1.5:3:3"),
+                   ("Medium", "hqdn3d=4:3:6:4.5")]
+
+# Which audio track to keep. OBS style recordings often carry the mic and the
+# game as separate tracks; "mix" folds every track into one. The menu only
+# appears when a queued file actually has more than one audio track.
+AUDIO_TRACK_OPTIONS = [("Auto (default track)", None),
+                       ("Track 1", 0), ("Track 2", 1),
+                       ("Track 3", 2), ("Track 4", 3),
+                       ("Mix all tracks", "mix")]
 PARTS_OPTIONS = [("Auto", None), ("2", 2), ("3", 3), ("4", 4), ("6", 6), ("8", 8)]
 
 GIF_DITHER_OPTIONS = [("Bayer (clean)", "bayer:bayer_scale=5"),
@@ -236,7 +255,8 @@ _ERROR_HINTS = [
      "That video has an unusual size. Try a different resolution setting."),
     # GPU encoding
     (("cannot load nvcuda", "openencodesessionex", "no capable devices",
-      "initializeencoder failed", "nvenc"),
+      "initializeencoder failed", "nvenc", "createcomponent", "_amf",
+      "mfx session", "_qsv"),
      "Your graphics card could not handle this encode. Set Hardware to CPU and "
      "try again."),
     # downloads: connectivity

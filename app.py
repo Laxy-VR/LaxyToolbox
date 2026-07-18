@@ -10,6 +10,7 @@ only the composition, startup, and shutdown.
 """
 
 import json
+import os
 import queue
 import sys
 import threading
@@ -58,13 +59,16 @@ class App(BuildMixin, QueueMixin, DownloadsMixin, NotesMixin, SettingsMixin,
         self.selected_id: int | None = None
         self._next_id = 0
         self._prefilled = False
-        # None = unverified (offer GPU, verify in background), True/False = known
-        self._gpu_ok = None
+        # GPU verdicts per vendor ("nvenc"/"amf"/"qsv" -> bool). A vendor not
+        # in the dict is unverified: offered, then probed in the background.
+        self._gpu_ok: dict = {}
 
         self.cancel_event = threading.Event()
         self.msg_queue: queue.Queue = queue.Queue()
         self._dl_cancels: dict = {}  # per-download cancel events, keyed by job id
         self._user_presets: dict = {}  # name -> settings snapshot, from config
+        self._sample_cancel = threading.Event()  # stops a running 5s sample
+        self._sample_files: list = []  # temp sample encodes, swept on close
 
         self._build_ui()
         # Size to fit every control: height is measured on the taller
@@ -100,15 +104,16 @@ class App(BuildMixin, QueueMixin, DownloadsMixin, NotesMixin, SettingsMixin,
         if GITHUB_REPO:
             self.after(1500, lambda: threading.Thread(
                 target=self._update_check_worker, daemon=True).start())
-        # Verify NVENC actually works here unless a previous run already
-        # confirmed it (an AMD GPU or old NVIDIA driver fails at encode time
-        # even though the bundled ffmpeg lists the encoders).
-        if self._gpu_codecs and self._gpu_ok is not True:
+        # Verify each GPU vendor actually works here unless a previous run
+        # already ruled (the wrong GPU brand or an old driver fails at encode
+        # time even though the bundled ffmpeg lists the encoders).
+        if any(v not in self._gpu_ok for v in self._gpu_codecs):
             threading.Thread(target=self._gpu_probe_worker, daemon=True).start()
         self.after(100, self._poll_queue)
 
     def _on_close(self):
         self.cancel_event.set()  # stop the encode loop scheduling more work
+        self._sample_cancel.set()  # and any 5s sample encode
         for ev in self._dl_cancels.values():  # stop in-flight downloads
             ev.set()
         self._save_config()
@@ -118,6 +123,12 @@ class App(BuildMixin, QueueMixin, DownloadsMixin, NotesMixin, SettingsMixin,
         for job in self.jobs:
             if job.status in ("queued", "encoding"):
                 self._cleanup_outputs(job)
+        for path in self._sample_files:  # sweep temp 5s sample encodes
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
         self.destroy()
 
 

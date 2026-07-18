@@ -479,3 +479,130 @@ def test_image_resize_multiplier_and_cap():
                                     {"img_format": "webp", "img_quality": "balanced",
                                      "img_resize": ("h", 1080)}))[0]
     assert "min(1080" in cmd  # caps height without upscaling
+
+
+# ---------- GPU vendors: AMD (AMF) and Intel (QSV) ----------
+def test_quality_amf_uses_cqp():
+    """AMF constant quality: CQP with the quality preset; H.264 also sets
+    the B-frame QP, and AV1 quantizes on its own 0..255 scale."""
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(encoder="amf"), "quality"))[0]
+    assert "hevc_amf" in cmd and "-rc cqp" in cmd
+    assert "-qp_i 22 -qp_p 22" in cmd and "-quality quality" in cmd
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(encoder="amf", codec="h264"), "quality"))[0]
+    assert "h264_amf" in cmd and "-qp_b 18" in cmd  # crf 22 - 4
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(encoder="amf", codec="av1"), "quality"))[0]
+    assert "av1_amf" in cmd and "-qp_i 145" in cmd  # (22 + 7) * 5
+
+
+def test_quality_qsv_uses_global_quality():
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(encoder="qsv"), "quality"))[0]
+    assert "hevc_qsv" in cmd and "-global_quality 22" in cmd
+
+
+def test_target_amf_and_qsv_single_pass():
+    s = _base(encoder="amf", video_bitrate=900, audio_mode="aac")
+    cmds = joined(build_stages("in.mp4", "out.mp4", s, "target"))
+    assert len(cmds) == 1
+    assert "hevc_amf" in cmds[0] and "-rc vbr_peak" in cmds[0]
+    assert "-b:v 900k" in cmds[0] and "-maxrate 900k" in cmds[0]
+    s = _base(encoder="qsv", video_bitrate=900, audio_mode="aac")
+    cmds = joined(build_stages("in.mp4", "out.mp4", s, "target"))
+    assert len(cmds) == 1 and "hevc_qsv" in cmds[0] and "-b:v 900k" in cmds[0]
+
+
+def test_vbv_cap_skipped_on_amf_and_qsv():
+    """AMF CQP and QSV ICQ have no clean VBV; the roomy-target cap must not
+    emit a maxrate there (the planner's headroom margin covers it)."""
+    for vendor in ("amf", "qsv"):
+        cmd = joined(build_stages("in.mp4", "out.mp4",
+                                  _base(encoder=vendor, vbv_maxrate=2000),
+                                  "quality"))[0]
+        assert "-maxrate" not in cmd
+
+
+def test_gpu_10bit_pixfmt_all_vendors():
+    for vendor in ("nvenc", "amf", "qsv"):
+        cmd = joined(build_stages("in.mp4", "out.mp4",
+                                  _base(encoder=vendor, src_10bit=True),
+                                  "quality"))[0]
+        assert "-pix_fmt p010le" in cmd
+
+
+# ---------- auto deinterlace ----------
+def test_interlaced_source_gets_bwdif_first():
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(src_interlaced=True, target_height=720),
+                              "quality"))[0]
+    assert "-vf bwdif,scale=-2:720" in cmd
+    # progressive sources are left alone
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(), "quality"))[0]
+    assert "bwdif" not in cmd
+
+
+def test_gif_chain_deinterlaces():
+    cmds = joined(build_gif_stages("in.mp4", "out.gif",
+                                   {"gif_format": "gif", "gif_dither": "none",
+                                    "src_interlaced": True}))
+    assert "bwdif" in cmds[0]
+
+
+# ---------- denoise ----------
+def test_denoise_after_rotate_before_scale():
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(rotate="hflip", denoise="hqdn3d=2:1.5:3:3",
+                                    target_height=720), "quality"))[0]
+    assert "hflip,hqdn3d=2:1.5:3:3,scale=-2:720" in cmd
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(), "quality"))[0]
+    assert "hqdn3d" not in cmd
+
+
+# ---------- audio track selection ----------
+def test_audio_track_map():
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(audio_track=1), "quality"))[0]
+    assert "-map 0:v:0 -map 0:a:1?" in cmd  # ? tolerates single-track files
+
+
+def test_audio_track_auto_adds_no_maps():
+    cmd = joined(build_stages("in.mp4", "out.mp4", _base(), "quality"))[0]
+    assert "-map" not in cmd
+
+
+def test_audio_mix_builds_amix_graph():
+    """Mix all tracks: amix folds every stream; copy cannot survive a mix,
+    so it falls back to AAC."""
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(audio_track="mix", audio_track_count=2),
+                              "quality"))[0]
+    assert "[0:a:0][0:a:1]amix=inputs=2:duration=longest[aout]" in cmd
+    assert "-map 0:v:0 -map [aout]" in cmd
+    assert "-c:a aac" in cmd and "-c:a copy" not in cmd
+
+
+def test_audio_mix_with_boost_joins_graph():
+    """Boost's loudnorm must live inside the mix graph: -af on a stream fed
+    by a complex filtergraph is an ffmpeg error."""
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(audio_track="mix", audio_track_count=2,
+                                    audio_mode="boost", audio_bitrate="192k"),
+                              "quality"))[0]
+    assert "amix=inputs=2:duration=longest,loudnorm=" in cmd
+    assert "-af" not in cmd and "-b:a 192k" in cmd
+
+
+def test_audio_mix_single_track_noop():
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(audio_track="mix", audio_track_count=1),
+                              "quality"))[0]
+    assert "amix" not in cmd and "-map" not in cmd
+
+
+def test_audio_track_ignored_when_removing_audio():
+    cmd = joined(build_stages("in.mp4", "out.mp4",
+                              _base(audio_track=1, audio_mode="none"),
+                              "quality"))[0]
+    assert "-map" not in cmd and "-an" in cmd

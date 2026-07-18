@@ -195,10 +195,22 @@ ingredients.
   downloading when the local copy is over a week old.
 
 ### GPU encoding
-- Encoder presence in the ffmpeg build says nothing about the machine: AMD
-  and Intel GPUs, or old NVIDIA drivers, fail at encode time. `nvenc_works()`
-  runs a real one frame test encode in the background on first launch and
-  caches the verdict in the config (`nvenc_ok`).
+- Encoder presence in the ffmpeg build says nothing about the machine: the
+  wrong GPU brand, or an old driver, fails at encode time. `gpu_works(vendor)`
+  runs a real one frame test encode per vendor (NVENC / AMF / QSV) in the
+  background on first launch and caches the verdicts in the config
+  (`gpu_ok`, a dict; the old `nvenc_ok` bool is migrated on load).
+- Each vendor speaks its own constant quality dialect: NVENC `-cq`, AMF
+  `-rc cqp` with `-qp_i/-qp_p` (plus `-qp_b` on H.264), QSV `-global_quality`
+  (ICQ). All sit on roughly the H.264/HEVC 0..51 scale **except AV1 AMF,
+  which quantizes 0..255** (the app multiplies by 5).
+- The roomy-target VBV cap only exists on x264/x265 and NVENC. AMF CQP and
+  QSV ICQ ignore or reject `-maxrate`, so those fall back to the planner's
+  headroom margin (same as SVT-AV1).
+- A machine can pass the probe for one vendor and fail another (a Ryzen APU
+  plus an NVIDIA card passes NVENC and AMF, fails QSV), and a vendor can
+  pass H.265 but lack AV1 hardware; the encode then fails with the friendly
+  GPU error, same as before.
 
 ### Color and HDR
 - Everything pins `yuv420p` for playability, **except** 10 bit sources going
@@ -206,6 +218,15 @@ ingredients.
 - HDR (PQ/HLG) squeezed to 8 bit SDR without tone mapping looks washed out;
   `encoder.TONEMAP` (a zscale + hable chain) handles H.264 and GIF outputs
   from HDR sources.
+
+### Audio track mixing
+- "Mix all tracks" builds an `amix` complex filtergraph. A `-vf` on the
+  video stream alongside `-filter_complex` on the audio streams is legal
+  (they touch different streams), but an `-af` on a stream fed by the
+  complex graph is an ffmpeg error, so boost's loudnorm joins the amix
+  graph instead of using `-af`. A mix also cannot be stream copied; copy
+  falls back to AAC. The amix input count comes from each file's own probed
+  track count (`audio_track_count`), set per file by the planner.
 
 ### Subtitles burn-in
 - The `subtitles=` filter's filename goes through **two** rounds of ffmpeg

@@ -54,9 +54,13 @@ def plan_job(job, mode, base_settings, size_mb):
     Each stage is (label, command, duration_seconds) for progress scaling."""
     settings = dict(base_settings)
     # Per-file source traits the encoder needs: 10-bit stays 10-bit on
-    # H.265/AV1, and HDR gets tone mapped when the output must be SDR.
+    # H.265/AV1, HDR gets tone mapped when the output must be SDR,
+    # interlaced sources get deinterlaced, and "mix all tracks" needs each
+    # file's own audio track count for its amix graph.
     settings["src_10bit"] = job.info.is_10bit
     settings["src_hdr"] = job.info.is_hdr
+    settings["src_interlaced"] = job.info.is_interlaced
+    settings["audio_track_count"] = job.info.audio_tracks
     dur = job.info.duration
     if settings["audio_mode"] == "none":
         audio_kbps = 0
@@ -64,9 +68,9 @@ def plan_job(job, mode, base_settings, size_mb):
         audio_kbps = 128
     else:
         audio_kbps = int(str(settings["audio_bitrate"]).rstrip("k"))
-    # NVENC size targeting is less precise than x265 2-pass, so leave it a
+    # GPU size targeting is less precise than x265 2-pass, so leave it a
     # bit more headroom to stay under the limit.
-    safety = 0.90 if settings.get("encoder") == "nvenc" else 0.95
+    safety = 0.90 if settings.get("encoder") in ("nvenc", "amf", "qsv") else 0.95
 
     if mode == MODE_IMAGE:
         stages = [(lbl, cmd, 1.0) for lbl, cmd in

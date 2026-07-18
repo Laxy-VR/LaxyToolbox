@@ -8,6 +8,7 @@ flips job.status on the Job objects QueueMixin manages."""
 
 import os
 import queue
+import tempfile
 import threading
 import time
 from tkinter import messagebox
@@ -19,10 +20,10 @@ from models import (APP_NAME, APP_VERSION, GITHUB_REPO, MODE_QUALITY,
                     MODE_TARGET, MODE_SPLIT, MODE_GIF, MODE_IMAGE, MODE_AUDIO,
                     MODE_DOWNLOAD, PARTS_OPTIONS, GIF_FORMAT_OPTIONS,
                     GIF_OUT_EXT, IMG_FORMAT_OPTIONS, AUD_FORMAT_OPTIONS,
-                    HW_OPTIONS, unique_path, friendly_error, human_size,
+                    Job, unique_path, friendly_error, human_size,
                     is_image, is_audio, parse_time)
 from planner import plan_job, trimmed_duration
-from probe import nvenc_works, recommend_settings
+from probe import gpu_works, recommend_settings
 from sysutil import (set_keep_awake, flash_taskbar, latest_release,
                      is_newer_version, set_taskbar_progress)
 
@@ -309,7 +310,9 @@ class RunMixin:
         elif kind == "update":
             self._show_update(msg[1], msg[2])
         elif kind == "gpu_ok":
-            self._on_gpu_probed(msg[1])
+            self._on_gpu_probed(msg[1], msg[2])
+        elif kind == "sample_done":
+            self._on_sample_done(msg[1], msg[2])
         elif kind == "row_thumb":
             job = self._job(msg[1])
             if job and job.row:
@@ -345,6 +348,11 @@ class RunMixin:
                 f"“{os.path.basename(job.path)}”. Try the Cookies option on the "
                 "Download tab (sign in to the site in that browser first), or "
                 "retry later."))
+        if (info is not None and info.audio_tracks > 1
+                and not self.track_menu.winfo_ismapped()):
+            # First multi-track file in the queue: reveal the Audio track
+            # choice (it hides again when the queue has none).
+            self._refresh_mode()
         tuned = False
         if info is not None and not self._prefilled:
             self._apply_recommended(recommend_settings(info))
@@ -420,22 +428,83 @@ class RunMixin:
 
     # ---------- GPU capability probe ----------
     def _gpu_probe_worker(self):
-        self.msg_queue.put(("gpu_ok", nvenc_works()))
+        # Test each unverified vendor with a real one frame encode; verdicts
+        # arrive one by one so the first working GPU shows up right away.
+        for vendor in list(self._gpu_codecs):
+            if vendor not in self._gpu_ok:
+                self.msg_queue.put(("gpu_ok", vendor, gpu_works(vendor)))
 
-    def _on_gpu_probed(self, ok):
-        self._gpu_ok = ok
+    def _on_gpu_probed(self, vendor, ok):
+        self._gpu_ok[vendor] = ok
         if not ok:
-            self._hide_gpu_option()
+            self._refresh_hw_menu()  # drop the vendor; hide menu if none left
         self._save_config()  # cache the verdict so working GPUs skip the probe
 
-    def _hide_gpu_option(self):
-        if self.hw_menu is None:
+    # ---------- 5 second sample encode ----------
+    def on_sample(self):
+        """Encode 5 seconds from the middle of the selected video with the
+        current settings and open the result, to judge quality cheaply."""
+        if self.start_btn.cget("state") == "disabled":
+            self.status.configure(text="Finish or cancel the current batch first.")
             return
-        self.hw_menu.set(HW_OPTIONS[0][0])  # CPU
-        self.hw_menu.grid_remove()
-        self.hw_menu_label.grid_remove()
-        self.crf_caption.configure(text="Quality (CRF)")
-        self._sync_controls()
+        def is_video(j):
+            return j.info is not None and not is_image(j.path) and not is_audio(j.path)
+        job = self._selected_job()
+        if job is None or not is_video(job):
+            job = next((j for j in self.jobs if is_video(j)), None)
+        if job is None:
+            self.status.configure(text="Add a video first.")
+            return
+        settings = self._collect_settings()
+        dur = job.info.duration or 0.0
+        start = max((dur - 5.0) / 2, 0.0)
+        end = min(start + 5.0, dur) if dur > 0 else start + 5.0
+        settings["trim"] = (start, end)
+        settings["cut_only"] = False
+        out = os.path.join(tempfile.gettempdir(),
+                           f"laxy_sample_{os.getpid()}_{job.id}.mp4")
+        # A throwaway Job shim so plan_job (crop detection, subtitles, HDR)
+        # treats the sample exactly like the real encode would.
+        sample = Job(id=-1000 - job.id, path=job.path)
+        sample.info = job.info
+        sample.outputs = [out]
+        self._sample_files.append(out)
+        self._sample_cancel.clear()
+        self.sample_btn.configure(state="disabled", text="Encoding sample…")
+        self.status.configure(text="Encoding a 5 second sample…")
+        threading.Thread(target=self._sample_worker,
+                         args=(sample, settings), daemon=True).start()
+
+    def _sample_worker(self, sample, settings):
+        stages, _passlogs, reason = plan_job(sample, MODE_QUALITY, settings, None)
+        if stages is None:
+            self.msg_queue.put(("sample_done", None, reason))
+            return
+        for _label, cmd, _dur in stages:
+            try:
+                code, tail = run_encode(cmd, 0, lambda *_a: None,
+                                        self._sample_cancel)
+            except Exception as e:  # noqa: BLE001
+                self.msg_queue.put(("sample_done", None, str(e)))
+                return
+            if code is None:
+                self.msg_queue.put(("sample_done", None, None))  # cancelled
+                return
+            if code != 0:
+                self.msg_queue.put(("sample_done", None, friendly_error(tail)))
+                return
+        self.msg_queue.put(("sample_done", sample.outputs[0], None))
+
+    def _on_sample_done(self, path, error):
+        self.sample_btn.configure(state="normal", text="Test a 5s sample")
+        if path:
+            self.status.configure(text="Sample ready · opening in your player.")
+            try:
+                os.startfile(path)
+            except OSError:
+                self.status.configure(text=f"Sample saved to {path}")
+        elif error:
+            self.status.configure(text=f"Sample failed: {error}")
 
     # ---------- app update check ----------
     def _update_check_worker(self):

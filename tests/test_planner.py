@@ -329,3 +329,27 @@ def test_estimate_handles_bad_gif_input():
     assert estimate_output_bytes(_info(), MODE_GIF,
                                  settings(gif_start="abc", gif_len="5",
                                           gif_format="gif")) is None
+
+
+# ---------- per-file source traits reach the encoder ----------
+def test_plan_passes_interlace_and_track_count():
+    job = make_job()
+    job.info.field_order = "tt"
+    job.info.audio_tracks = 3
+    stages, _p, reason = plan_job(job, MODE_QUALITY,
+                                  settings(audio_track="mix"), None)
+    assert reason is None
+    cmd = " ".join(stages[0][1])
+    assert "bwdif" in cmd
+    assert "amix=inputs=3" in cmd  # each file mixes its own track count
+
+
+def test_gpu_target_safety_margin():
+    """All GPU vendors get the wider 0.90 safety margin in target mode."""
+    from planner import plan_job as pj
+    for vendor in ("nvenc", "amf", "qsv"):
+        stages, _p, reason = pj(make_job(), MODE_TARGET,
+                                settings(encoder=vendor), 5)
+        assert reason is None
+        cmd = " ".join(stages[-1][1])
+        assert "_" + vendor in cmd or vendor == "nvenc" and "nvenc" in cmd

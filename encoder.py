@@ -5,8 +5,14 @@ import os
 import subprocess
 from collections import deque
 
-from probe import NO_WINDOW, FFMPEG, GIFSICLE
+from probe import NO_WINDOW, FFMPEG, GIFSICLE, GPU_ENCODERS
 from sysutil import track_child, untrack_child
+
+GPU_VENDORS = tuple(GPU_ENCODERS)  # ("nvenc", "amf", "qsv")
+
+
+def _is_gpu(settings: dict) -> bool:
+    return settings.get("encoder") in GPU_VENDORS
 
 
 def _escape_chars(s: str, chars: str) -> str:
@@ -37,7 +43,12 @@ def _video_filters(settings: dict) -> str:
     stay crisp at the final output resolution.
     """
     parts = []
-    # Crop first: it applies to the source picture (auto detection measured
+    # Deinterlace before anything else touches the frames: comb artifacts
+    # survive scaling and look terrible encoded. Applied automatically when
+    # the probe saw an interlaced field order; progressive sources skip it.
+    if settings.get("src_interlaced"):
+        parts.append("bwdif")
+    # Crop next: it applies to the source picture (auto detection measured
     # the source) and cuts the pixels every later filter has to process.
     if settings.get("crop_filter"):      # per-file "crop=w:h:x:y" from auto
         parts.append(settings["crop_filter"])
@@ -49,6 +60,10 @@ def _video_filters(settings: dict) -> str:
         parts.append(TONEMAP)
     if settings.get("rotate"):
         parts.append(settings["rotate"])
+    if settings.get("denoise"):
+        # Denoise at the source resolution, before any downscale: hqdn3d
+        # works best on the original pixels, and grain is what eats bitrate.
+        parts.append(settings["denoise"])
     if settings.get("target_height"):
         parts.append(f"scale=-2:{settings['target_height']}")
     if settings.get("target_fps"):
@@ -90,13 +105,13 @@ PROGRESS = ["-progress", "pipe:1", "-nostats"]
 
 # One codec table drives every command. crf_off maps the app's single quality
 # slider (x265-scaled, 16..32) onto each codec's own CRF/CQ scale so the same
-# slider position gives roughly the same visual quality everywhere.
+# slider position gives roughly the same visual quality everywhere. GPU
+# encoder names come from probe.GPU_ENCODERS (one per vendor per codec).
 # `tag` makes H.265 mp4s play in QuickTime / on Apple devices.
 CODECS = {
-    "h265": {"cpu": "libx265", "gpu": "hevc_nvenc", "crf_off": 0,
-             "tag": ["-tag:v", "hvc1"]},
-    "av1":  {"cpu": "libsvtav1", "gpu": "av1_nvenc", "crf_off": 7, "tag": []},
-    "h264": {"cpu": "libx264", "gpu": "h264_nvenc", "crf_off": -4, "tag": []},
+    "h265": {"cpu": "libx265", "crf_off": 0, "tag": ["-tag:v", "hvc1"]},
+    "av1":  {"cpu": "libsvtav1", "crf_off": 7, "tag": []},
+    "h264": {"cpu": "libx264", "crf_off": -4, "tag": []},
 }
 
 # SVT-AV1 takes numeric presets (0 = slowest/best) instead of x264/x265 names.
@@ -163,27 +178,83 @@ def _cpu_quality_args(settings: dict) -> list[str]:
 
 
 def _gpu_quality_args(settings: dict) -> list[str]:
-    info = CODECS[settings.get("codec", "h265")]
-    return ["-c:v", info["gpu"], "-preset", "p5", "-rc", "vbr",
-            "-cq", str(_codec_crf(settings)), "-b:v", "0"]
+    """Constant quality args for the selected GPU vendor's encoder.
+
+    Each vendor has its own idea of constant quality: NVENC's CQ, AMF's CQP,
+    and QSV's ICQ (-global_quality) all sit on roughly the H.264/HEVC 0..51
+    scale, so the shared slider mapping carries over.
+    """
+    codec = settings.get("codec", "h265")
+    vendor = settings["encoder"]
+    enc = GPU_ENCODERS[vendor][codec]
+    q = _codec_crf(settings)
+    if vendor == "nvenc":
+        return ["-c:v", enc, "-preset", "p5", "-rc", "vbr",
+                "-cq", str(q), "-b:v", "0"]
+    if vendor == "amf":
+        if codec == "av1":
+            q = min(255, q * 5)  # AV1 AMF quantizes on a 0..255 scale
+        args = ["-c:v", enc, "-quality", "quality", "-rc", "cqp",
+                "-qp_i", str(q), "-qp_p", str(q)]
+        if codec == "h264":
+            args += ["-qp_b", str(q)]
+        return args
+    return ["-c:v", enc, "-preset", "slower", "-global_quality", str(q)]
+
+
+def _track_args(settings: dict):
+    """(-map arguments, audio args override) for the audio track choice.
+
+    Default (auto) adds nothing: ffmpeg keeps picking its default streams. A
+    numbered track maps that stream explicitly (the trailing ? keeps batch
+    files with fewer tracks working). "mix" folds every track into one with
+    amix; a mix cannot be stream copied, so copy falls back to AAC, and the
+    boost mode's loudnorm joins the mix graph (an -af on a stream fed by a
+    complex graph is an ffmpeg error).
+    """
+    track = settings.get("audio_track")
+    if track is None or settings["audio_mode"] == "none":
+        return [], None
+    if track != "mix":
+        return ["-map", "0:v:0", "-map", f"0:a:{int(track)}?"], None
+    n = int(settings.get("audio_track_count") or 0)
+    if n < 2:
+        return [], None  # nothing to mix; keep the default streams
+    graph = "".join(f"[0:a:{i}]" for i in range(n)) \
+        + f"amix=inputs={n}:duration=longest"
+    if settings["audio_mode"] == "boost":
+        graph += ",loudnorm=I=-16:TP=-1.5:LRA=11"
+        aargs = ["-ar", "48000", "-c:a", "aac",
+                 "-b:a", str(settings.get("audio_bitrate") or "192k")]
+    else:
+        bitrate = settings["audio_bitrate"] if settings["audio_mode"] == "aac" \
+            else "192k"
+        aargs = ["-c:a", "aac", "-b:a", str(bitrate)]
+    return (["-filter_complex", graph + "[aout]",
+             "-map", "0:v:0", "-map", "[aout]"], aargs)
 
 
 def build_stages(input_path: str, output_path: str, settings: dict, mode: str,
                  passlog: str | None = None, segment=None):
     """Return a list of (label, command) stages for one output file.
 
-    mode "quality": single constant-quality pass (CRF on CPU, CQ on NVENC).
+    mode "quality": single constant-quality pass (CRF on CPU; CQ / CQP / ICQ
+                    on NVENC / AMF / QSV).
     mode "target":  size-targeted. x265/x264 use a real 2-pass; SVT-AV1 uses
-                    single-pass ABR; NVENC uses its internal full-res multipass.
+                    single-pass ABR; NVENC uses its internal full-res
+                    multipass; AMF uses peak-constrained VBR; QSV plain VBR.
     `segment` (start, dur) encodes just that slice, used by split-to-fit.
     """
     codec = settings.get("codec", "h265")
     info = CODECS[codec]
-    gpu = settings.get("encoder") == "nvenc"
+    gpu = _is_gpu(settings)
+    vendor = settings.get("encoder")
     vf = _video_filters(settings)
     filt = ["-vf", vf] if vf else []
     base = _input_args(input_path, segment)
     tag = info["tag"]
+    maps, aargs = _track_args(settings)
+    audio = aargs if aargs is not None else _audio_args(settings)
 
     if mode == "target" and not gpu and codec in ("h265", "h264"):
         vb = f"{int(settings['video_bitrate'])}k"
@@ -196,35 +267,42 @@ def build_stages(input_path: str, output_path: str, settings: dict, mode: str,
             p1 = ["-pass", "1", "-passlogfile", passlog]
             p2 = ["-pass", "2", "-passlogfile", passlog]
         pass1 = common + filt + p1 + ["-an"] + PROGRESS + ["-f", "null", os.devnull]
-        pass2 = common + filt + p2 + tag + _audio_args(settings) + PROGRESS + [output_path]
+        pass2 = common + filt + p2 + tag + maps + audio + PROGRESS + [output_path]
         return [("analyze", pass1), ("encode", pass2)]
 
     if mode == "target" and not gpu:  # SVT-AV1: single-pass average bitrate
         vb = f"{int(settings['video_bitrate'])}k"
         preset = _SVT_PRESETS.get(str(settings["preset"]), 6)
         cmd = base + ["-c:v", info["cpu"], "-preset", str(preset), "-b:v", vb] \
-            + _pix_args(settings, gpu) + filt + _audio_args(settings) \
+            + _pix_args(settings, gpu) + filt + maps + audio \
             + PROGRESS + [output_path]
         return [("encode", cmd)]
 
-    if mode == "target":  # NVENC size target (internal multipass, single stage)
+    if mode == "target":  # GPU size target, single stage per vendor
         vb = int(settings["video_bitrate"])
-        vargs = ["-c:v", info["gpu"], "-preset", "p5", "-rc", "vbr",
-                 "-b:v", f"{vb}k", "-maxrate", f"{vb}k", "-bufsize", f"{2 * vb}k",
-                 "-multipass", "fullres"]
+        enc = GPU_ENCODERS[vendor][codec]
+        rate = ["-b:v", f"{vb}k", "-maxrate", f"{vb}k", "-bufsize", f"{2 * vb}k"]
+        if vendor == "nvenc":
+            vargs = ["-c:v", enc, "-preset", "p5", "-rc", "vbr"] + rate \
+                + ["-multipass", "fullres"]
+        elif vendor == "amf":
+            vargs = ["-c:v", enc, "-quality", "quality", "-rc", "vbr_peak"] + rate
+        else:  # qsv
+            vargs = ["-c:v", enc, "-preset", "slower"] + rate
         cmd = base + vargs + _pix_args(settings, gpu) + tag + filt \
-            + _audio_args(settings) + PROGRESS + [output_path]
+            + maps + audio + PROGRESS + [output_path]
         return [("encode", cmd)]
 
     # quality mode, single pass
     vargs = _gpu_quality_args(settings) if gpu else _cpu_quality_args(settings)
     cap = settings.get("vbv_maxrate")
-    if cap and (gpu or codec in ("h265", "h264")):
+    if cap and (vendor == "nvenc" or (not gpu and codec in ("h265", "h264"))):
         # Capped quality (roomy Target size): CRF decides the size, the VBV
-        # ceiling guarantees the limit. SVT-AV1's wrapper has no clean VBV;
-        # its plain CRF plus the planner's headroom margin suffices.
+        # ceiling guarantees the limit. SVT-AV1's wrapper has no clean VBV,
+        # and AMF's CQP / QSV's ICQ modes ignore or reject maxrate; there the
+        # planner's headroom margin suffices.
         vargs += ["-maxrate", f"{int(cap)}k", "-bufsize", f"{int(2 * cap)}k"]
-    cmd = base + vargs + _pix_args(settings, gpu) + tag + filt + _audio_args(settings) \
+    cmd = base + vargs + _pix_args(settings, gpu) + tag + filt + maps + audio \
         + PROGRESS + [output_path]
     return [("encode", cmd)]
 
@@ -254,6 +332,8 @@ def build_gif_stages(input_path: str, output_path: str, settings: dict, segment=
     speed = float(settings.get("gif_speed") or 1.0)
     direction = settings.get("gif_direction", "forward")
     chain = []
+    if settings.get("src_interlaced"):  # comb artifacts ruin palettes too
+        chain.append("bwdif")
     if settings.get("src_hdr"):  # GIF/WebP palettes are SDR; tone map first
         chain.append(TONEMAP)
     # setpts before fps: after the speed change, fps drops (or duplicates)

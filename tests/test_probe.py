@@ -91,3 +91,29 @@ def test_hdr_and_bit_depth_detection():
     sdr.pix_fmt, sdr.color_transfer = "yuv420p", "bt709"
     assert not sdr.is_10bit and not sdr.is_hdr
     assert not make().is_10bit  # pix_fmt None
+
+
+def test_interlace_detection():
+    for order in ("tt", "bb", "tb", "bt"):
+        info = make()
+        info.field_order = order
+        assert info.is_interlaced
+    prog = make()
+    prog.field_order = "progressive"
+    assert not prog.is_interlaced
+    assert not make().is_interlaced  # unknown field order: leave it alone
+
+
+def test_gpu_vendors_reads_encoder_list(monkeypatch):
+    import probe
+    monkeypatch.setattr(probe, "_encoders_list",
+                        lambda: "hevc_nvenc h264_nvenc hevc_amf")
+    vendors = probe.gpu_vendors()
+    assert vendors == {"nvenc": {"h265", "h264"}, "amf": {"h265"}}
+
+
+def test_gpu_works_false_without_encoder(monkeypatch):
+    import probe
+    monkeypatch.setattr(probe, "_encoders_list", lambda: "")
+    assert probe.gpu_works("amf") is False
+    assert probe.gpu_works("nonsense") is False

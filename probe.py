@@ -56,35 +56,44 @@ def _encoders_list() -> str:
     return _ENCODERS_CACHE
 
 
-def has_nvenc() -> bool:
-    """True if this ffmpeg build exposes the NVIDIA hevc_nvenc encoder.
+# One ffmpeg encoder name per GPU vendor per codec. A vendor is only offered
+# in the UI when its encoders exist in the build AND gpu_works() succeeds on
+# this machine.
+GPU_ENCODERS = {
+    "nvenc": {"h265": "hevc_nvenc", "av1": "av1_nvenc", "h264": "h264_nvenc"},
+    "amf":   {"h265": "hevc_amf",   "av1": "av1_amf",   "h264": "h264_amf"},
+    "qsv":   {"h265": "hevc_qsv",   "av1": "av1_qsv",   "h264": "h264_qsv"},
+}
 
-    Presence in the encoder list is a good proxy; if the GPU is missing the
-    actual encode fails and the job is reported as failed, which is fine.
+
+def gpu_vendors() -> dict:
+    """vendor -> set of codecs this ffmpeg build has GPU encoders for.
+
+    Presence in the build says nothing about THIS machine (see gpu_works);
+    it only decides which vendors are worth probing at all.
     """
-    return "hevc_nvenc" in _encoders_list()
-
-
-def gpu_codecs() -> set:
-    """Codecs this machine can encode on the GPU ({'h265', 'av1', 'h264'})."""
     encoders = _encoders_list()
-    return {codec for codec, name in
-            (("h265", "hevc_nvenc"), ("av1", "av1_nvenc"), ("h264", "h264_nvenc"))
-            if name in encoders}
+    found = {}
+    for vendor, table in GPU_ENCODERS.items():
+        codecs = {codec for codec, name in table.items() if name in encoders}
+        if codecs:
+            found[vendor] = codecs
+    return found
 
 
-def nvenc_works() -> bool:
-    """Actually try a one frame NVENC encode.
+def gpu_works(vendor: str) -> bool:
+    """Actually try a one frame encode on `vendor`'s H.265 encoder.
 
     Encoder presence in the ffmpeg build says nothing about THIS machine:
-    an AMD/Intel GPU or a too-old NVIDIA driver still fails at encode time,
-    so the GPU option should only be offered when a real encode succeeds.
-    Takes about a second; callers should run it off the UI thread and cache.
+    the wrong GPU brand, or a too-old driver, still fails at encode time, so
+    a vendor is only offered when a real encode succeeds. Takes about a
+    second; callers should run it off the UI thread and cache the verdict.
     """
-    if not has_nvenc():
+    name = GPU_ENCODERS.get(vendor, {}).get("h265")
+    if not name or name not in _encoders_list():
         return False
     cmd = [FFMPEG, "-v", "error", "-f", "lavfi", "-i", "color=black:s=256x256:d=0.1",
-           "-frames:v", "1", "-c:v", "hevc_nvenc", "-f", "null", os.devnull]
+           "-frames:v", "1", "-c:v", name, "-f", "null", os.devnull]
     try:
         r = subprocess.run(cmd, capture_output=True, creationflags=NO_WINDOW,
                            timeout=20)
@@ -146,6 +155,14 @@ class VideoInfo:
     size_bytes: int | None
     pix_fmt: str | None = None
     color_transfer: str | None = None
+    field_order: str | None = None   # "progressive", "tt", "bb", "tb", "bt"
+    audio_tracks: int = 0            # number of audio streams in the file
+
+    @property
+    def is_interlaced(self) -> bool:
+        """True for interlaced sources (old TV captures, some camcorders),
+        which need deinterlacing before encoding to avoid comb artifacts."""
+        return self.field_order in ("tt", "bb", "tb", "bt")
 
     @property
     def is_10bit(self) -> bool:
@@ -228,6 +245,8 @@ def probe_video(path: str) -> VideoInfo:
         size_bytes=int(fmt["size"]) if fmt.get("size") else None,
         pix_fmt=video.get("pix_fmt") if video else None,
         color_transfer=video.get("color_transfer") if video else None,
+        field_order=video.get("field_order") if video else None,
+        audio_tracks=sum(1 for s in streams if s.get("codec_type") == "audio"),
     )
 
 

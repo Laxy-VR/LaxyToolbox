@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.6.0 · 2026-07-18
+- **AMD and Intel GPU encoding.** The Hardware menu now offers NVIDIA
+  (NVENC), AMD (AMF), and Intel (QSV) graphics cards for H.265, AV1, and
+  H.264. Like before, a vendor is only listed after a real one second test
+  encode proves it works on your machine, so the menu never offers a GPU
+  that would fail mid batch.
+- **Audio track choice** (in Advanced): files with several audio tracks
+  (OBS recordings with game and mic kept separate) can keep one track or
+  **mix them all into one**. The menu only appears when a queued file
+  actually has more than one track.
+- **Denoise** (in Advanced): Light and Medium options that soften film
+  grain and sensor noise. Grainy footage compresses dramatically better
+  with Light on, so files come out smaller too.
+- **Test a 5s sample** (in Advanced): encodes five seconds from the middle
+  of the selected video with the current settings and opens it in your
+  player, so you can judge quality before committing to a long encode.
+- **Automatic deinterlacing**: interlaced sources (old TV captures, some
+  camcorders) are detected during analysis and deinterlaced before
+  encoding, on every tab including GIF. No setting needed.
+
 ## v1.5.0 · 2026-07-16
 - **GIF size control**: a Size menu on the GIF tab caps the output height
   (Max 480p by default, 240p to 720p, never upscales a smaller source), or
