@@ -159,20 +159,18 @@ class SettingsMixin:
         return widgets
 
     def _compress_advanced_widgets(self):
-        """Compress controls tucked behind the Advanced toggle (fps is handled
-        separately: it stays visible on the GIF tab where it matters most).
-        The audio track menu only appears when a queued file actually has
-        more than one audio track, so it never clutters the common case."""
-        widgets = [self.preset_menu, self.preset_menu_label,
-                   self.rotate_menu, self.rotate_menu_label,
-                   self.subs_menu, self.subs_menu_label,
-                   self.crop_menu, self.crop_menu_label,
-                   self.denoise_menu, self.denoise_menu_label,
-                   self.speed_menu, self.speed_menu_label,
-                   self.sample_btn]
-        if any(j.info and j.info.audio_tracks > 1 for j in self.jobs):
-            widgets += [self.track_menu, self.track_menu_label]
-        return widgets
+        """Compress controls tucked behind the Advanced toggle (fps and the
+        audio track menu are handled separately in _refresh_mode: fps stays
+        visible on the GIF tab, and the track menu has its own multi-track
+        condition). Every widget MUST be unconditionally in one of these
+        show lists, or nothing ever hides it on the other tabs."""
+        return [self.preset_menu, self.preset_menu_label,
+                self.rotate_menu, self.rotate_menu_label,
+                self.subs_menu, self.subs_menu_label,
+                self.crop_menu, self.crop_menu_label,
+                self.denoise_menu, self.denoise_menu_label,
+                self.speed_menu, self.speed_menu_label,
+                self.sample_btn]
 
     def _toggle_advanced(self):
         self._advanced_open = not self._advanced_open
@@ -209,13 +207,11 @@ class SettingsMixin:
         show([self.advanced_btn], compress)
         show(self._compress_advanced_widgets(), adv)
         show([self.fps_menu, self.fps_menu_label], adv or tab == TAB_GIF)
-        # Audio tab track choice appears only when a multi-track file is queued.
-        if any(j.info and j.info.audio_tracks > 1 for j in self.jobs):
-            self.aud_track_label.grid()
-            self.aud_track_menu.grid()
-        else:
-            self.aud_track_label.grid_remove()
-            self.aud_track_menu.grid_remove()
+        # Track menus appear only when a queued file has several audio
+        # tracks: the Compress one inside Advanced, the Audio tab's own row.
+        multi = any(j.info and j.info.audio_tracks > 1 for j in self.jobs)
+        show([self.track_menu, self.track_menu_label], adv and multi)
+        show([self.aud_track_menu, self.aud_track_label], multi)
         self._sync_tab_controls()
         # The empty-field default differs per tab; say so honestly.
         if tab == TAB_DOWNLOAD:
