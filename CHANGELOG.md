@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.7.0 · 2026-07-18
 - **The app updates itself.** Clicking the update notice in the header now
   downloads the new version (verified against GitHub's checksum), installs
   it, and restarts, instead of sending you to the release page. If
