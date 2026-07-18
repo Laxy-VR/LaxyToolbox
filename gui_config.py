@@ -1,5 +1,9 @@
 """Persistence: the config file (last-used settings, window geometry, the
-cached GPU verdict) and named setting presets, built-in and user-saved."""
+cached GPU verdict) and named setting presets, built-in and user-saved.
+
+Shared state contract: reads and writes the widgets BuildMixin created and
+the core state App.__init__ owns (_user_presets, _gpu_ok, _advanced_open);
+_load_config must run after _build_ui so every widget it restores exists."""
 
 import json
 import tkinter as tk

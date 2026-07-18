@@ -1,5 +1,9 @@
 """The advisory layer: the per-mode note under the settings, per-row output
-size estimates, and the GIF/image preview thumbnails with the scrubber."""
+size estimates, and the GIF/image preview thumbnails with the scrubber.
+
+Shared state contract: read-only over the settings widgets and self.jobs;
+owns the thumbnail bookkeeping (_thumb_tokens, _thumb_images, _thumb_after)
+that BuildMixin initialises. Thumbnails arrive via self.msg_queue."""
 
 import os
 import threading
@@ -215,7 +219,7 @@ class NotesMixin:
         fmt = settings["gif_format"]
         out_len = gif_output_duration(length, settings)
         est = estimate_output_bytes(info, MODE_GIF, settings)
-        name = dict(zip(("gif", "webp", "mp4"), ("GIF", "WebP", "MP4 loop")))[fmt]
+        name = {"gif": "GIF", "webp": "WebP", "mp4": "MP4 loop"}[fmt]
         text = (f"{name} of {out_len:.1f}s (clip from {start:.0f}s) at {w}×{h}, "
                 f"{fps:.0f} fps. Rough size ~{human_size(est)}.")
         if fmt == "gif":

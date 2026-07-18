@@ -1,0 +1,30 @@
+# Tooling configuration only. The app is a flat set of modules packaged by
+# PyInstaller (see the .spec files and build.ps1), not an installable package,
+# so there is no [project] section.
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "B",    # bugbear (likely bugs)
+    "BLE",  # no blind excepts (each one needs an explicit noqa with a reason)
+    "C4",   # comprehension cleanups
+    "UP",   # outdated syntax for the supported Python version
+    "RET",  # return statement cleanups
+    "SIM",  # simplifications
+]
+ignore = [
+    # The codebase deliberately uses try/except pass with a why comment on the
+    # except line; contextlib.suppress would erase those comments.
+    "SIM105",
+    # Uppercase theme constants (theme.BG) look like constants to the Yoda
+    # condition check, flagging natural comparisons in the theme tests.
+    "SIM300",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

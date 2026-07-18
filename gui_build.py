@@ -1,5 +1,11 @@
 """Constructing the window: header, toolbar, queue area, the settings card
-for every tab, tooltips, and the short-screen scrollable fallback."""
+for every tab, tooltips, and the short-screen scrollable fallback.
+
+Shared state contract: every widget attribute the other mixins read
+(self.status, self.progress, the per tab menus and entries) is created here
+in _build_ui, which App.__init__ calls exactly once before anything else
+touches the UI. Renaming a widget attribute here means updating its users in
+the other gui_*.py mixins; grep before renaming."""
 
 import os
 
@@ -357,9 +363,12 @@ class BuildMixin:
         img_left = ctk.CTkFrame(self.image_frame, fg_color="transparent")
         img_left.grid(row=0, column=0, sticky="nw")
         for irow, (label, values, default, attr) in enumerate([
-                ("Format", [o[0] for o in IMG_FORMAT_OPTIONS], IMG_FORMAT_OPTIONS[0][0], "img_format_menu"),
-                ("Quality", [o[0] for o in IMG_QUALITY_OPTIONS], IMG_QUALITY_OPTIONS[1][0], "img_quality_menu"),
-                ("Resize", [o[0] for o in IMG_RESIZE_OPTIONS], IMG_RESIZE_OPTIONS[0][0], "img_resize_menu")]):
+                ("Format", [o[0] for o in IMG_FORMAT_OPTIONS],
+                 IMG_FORMAT_OPTIONS[0][0], "img_format_menu"),
+                ("Quality", [o[0] for o in IMG_QUALITY_OPTIONS],
+                 IMG_QUALITY_OPTIONS[1][0], "img_quality_menu"),
+                ("Resize", [o[0] for o in IMG_RESIZE_OPTIONS],
+                 IMG_RESIZE_OPTIONS[0][0], "img_resize_menu")]):
             ctk.CTkLabel(img_left, text=label, width=60, anchor="w").grid(
                 row=irow, column=0, sticky="w", pady=3)
             menu = ctk.CTkOptionMenu(img_left, width=230, values=values,

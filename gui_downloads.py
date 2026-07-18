@@ -1,5 +1,9 @@
 """The Download tab: clipboard prefill, starting yt-dlp downloads, and
-turning finished downloads into queue rows."""
+turning finished downloads into queue rows.
+
+Shared state contract: appends to self.jobs, registers cancel events in
+self._dl_cancels, and reports progress through self.msg_queue (all owned by
+App.__init__); worker threads never touch widgets directly."""
 
 import os
 import threading

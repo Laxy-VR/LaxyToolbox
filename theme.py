@@ -64,8 +64,8 @@ def _hex_to_rgb(color: str):
 
 def _rotate_hue(color: str, delta: float) -> str:
     """The same colour with its hue rotated by `delta` (0..1 wraps)."""
-    h, l, s = colorsys.rgb_to_hls(*_hex_to_rgb(color))
-    rgb = colorsys.hls_to_rgb((h + delta) % 1.0, l, s)
+    h, light, s = colorsys.rgb_to_hls(*_hex_to_rgb(color))
+    rgb = colorsys.hls_to_rgb((h + delta) % 1.0, light, s)
     return "#" + "".join(f"{round(c * 255):02x}" for c in rgb)
 
 

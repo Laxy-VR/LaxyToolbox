@@ -25,6 +25,33 @@ workflow.
 | `sysutil.py` | Windows helpers: keep awake, taskbar flash and real taskbar progress (ITaskbarList3 via ctypes), bundled resource paths, GitHub release lookup, self relaunch with a reset PyInstaller environment, and the child process registry (`track_child` / `terminate_children`) that stops window close from orphaning ffmpeg or yt-dlp. |
 | `theme.py` | Accent palettes (`ACCENTS`), private font loading, CustomTkinter theme override. `apply_theme(accent)` also rotates every neutral's hue to follow the accent, so a green app gets green tinted darks. |
 
+### The shape at a glance
+
+```mermaid
+flowchart LR
+    subgraph gui["GUI · one App object, main thread only"]
+        app[app.py] --> mixins["gui_*.py mixins"]
+        mixins --> widgets[widgets.py]
+        mixins --> theme[theme.py]
+    end
+    subgraph pure["Pure logic · no widgets, unit tested"]
+        planner[planner.py] --> encoder[encoder.py]
+        planner --> probe[probe.py]
+        models[models.py]
+    end
+    mixins --> planner
+    mixins --> models
+    mixins --> downloader[downloader.py]
+    mixins --> sysutil[sysutil.py]
+    encoder --> ffmpeg([ffmpeg · gifsicle])
+    probe --> ffprobe([ffprobe])
+    downloader --> ytdlp([yt-dlp])
+```
+
+Dependencies point one way: the GUI knows the pure modules, never the
+reverse. Worker threads live on the boundary; they call into the pure
+modules and report back through `App.msg_queue` (see Threading model).
+
 ### The mixin split
 
 `App` is one class assembled from seven mixins, one per concern. Every method
@@ -80,7 +107,8 @@ untouched.
 
 ## How a change ships
 
-1. Commit and push to `main`. CI runs the test suite on a Windows runner.
+1. Commit and push to `main`. CI lints (`ruff check .`, configured in
+   `pyproject.toml`) and runs the test suite on a Windows runner.
 2. Bump `APP_VERSION` in `models.py`, commit, push.
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`
 4. On GitHub: create a release from that tag. CI builds the exe (downloading

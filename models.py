@@ -312,7 +312,9 @@ class Job:
     path: str
     info: VideoInfo | None = None
     error: str | None = None
-    status: str = "reading"  # reading|ready|unsupported|queued|encoding|done|failed|cancelled
+    # reading|ready|unsupported|queued|encoding|done|failed|cancelled,
+    # plus downloading|downloaded for jobs from the Download tab
+    status: str = "reading"
     progress: float = 0.0
     output: str | None = None
     outputs: list = field(default_factory=list)  # all output files (>1 when split)

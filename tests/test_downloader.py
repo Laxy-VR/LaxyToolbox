@@ -121,11 +121,17 @@ def test_media_files_since_returns_all_sorted(tmp_path):
     """A playlist download reconciles against every file that landed, so the
     sweep must return them all, oldest first."""
     now = time.time()
-    a = tmp_path / "1.mp4"; a.write_bytes(b"x"); os.utime(a, (now - 30, now - 30))
-    b = tmp_path / "2.mp4"; b.write_bytes(b"x"); os.utime(b, (now - 20, now - 20))
-    c = tmp_path / "3.m4a"; c.write_bytes(b"x"); os.utime(c, (now - 10, now - 10))
-    (tmp_path / "old.mp4").write_bytes(b"x")
-    os.utime(tmp_path / "old.mp4", (now - 3600, now - 3600))
+
+    def make(name, age):
+        p = tmp_path / name
+        p.write_bytes(b"x")
+        os.utime(p, (now - age, now - age))
+        return p
+
+    a = make("1.mp4", 30)
+    b = make("2.mp4", 20)
+    c = make("3.m4a", 10)
+    make("old.mp4", 3600)
     (tmp_path / "part.part").write_bytes(b"x")  # unfinished, ignored
     got = media_files_since(str(tmp_path), since=now - 60)
     assert got == [str(a), str(b), str(c)]

@@ -1,5 +1,10 @@
 """Running a batch: validating inputs, planning outputs, the encode worker
-thread, progress, the message pump, and the GPU/update background probes."""
+thread, progress, the message pump, and the GPU/update background probes.
+
+Shared state contract: owns the message pump (_poll_queue/_dispatch), the
+single place worker threads' messages become widget updates; workers only
+ever put tuples on self.msg_queue. Reads the widgets BuildMixin created and
+flips job.status on the Job objects QueueMixin manages."""
 
 import os
 import queue

@@ -116,7 +116,8 @@ exe by `build.ps1`, which fails without them).
 ```powershell
 pip install -r requirements.txt
 python app.py          # run from source
-pip install pytest
+pip install pytest ruff
+ruff check .           # lint, same config CI enforces (pyproject.toml)
 pytest -q              # no display needed; the real-encode smoke tests
                        # auto-skip when ffmpeg/gifsicle are not on PATH
 pip install pyinstaller

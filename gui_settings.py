@@ -1,5 +1,9 @@
 """Settings state: which controls the current tab/mode shows, greying rules,
-codec/hardware interplay, and snapshotting every widget into a settings dict."""
+codec/hardware interplay, and snapshotting every widget into a settings dict.
+
+Shared state contract: reads the settings widgets BuildMixin created;
+_collect_settings is the one funnel from widget state to the plain dicts the
+planner and encoder consume, so worker threads never touch a widget."""
 
 import os
 from tkinter import filedialog

@@ -139,7 +139,8 @@ def _selftest(out_path):
         try:
             r = subprocess.run([tool, "-version"], capture_output=True,
                                text=True, creationflags=NO_WINDOW)
-            result[key] = (r.stdout or r.stderr).splitlines()[0] if (r.stdout or r.stderr) else "no output"
+            out = r.stdout or r.stderr
+            result[key] = out.splitlines()[0] if out else "no output"
         except Exception as e:  # noqa: BLE001
             result[key] = f"ERROR: {e}"
     try:

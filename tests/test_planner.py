@@ -234,7 +234,7 @@ def test_auto_crop_rejects_suspect_detections(monkeypatch):
 
 # ---------- output size estimates ----------
 def _info(**kw):
-    d = dict(width=1920, height=1080, duration=60.0, fps=30.0)
+    d = {"width": 1920, "height": 1080, "duration": 60.0, "fps": 30.0}
     d.update(kw)
     return VideoInfo("clip.mp4", d["width"], d["height"], d["duration"],
                      d["fps"], "h264", "aac", 8_000_000, 60_000_000)
