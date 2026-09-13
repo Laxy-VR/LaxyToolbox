@@ -158,3 +158,20 @@ def test_gpu_works_false_without_encoder(monkeypatch):
     monkeypatch.setattr(probe, "_encoders_list", lambda: "")
     assert probe.gpu_works("amf") is False
     assert probe.gpu_works("nonsense") is False
+
+
+def test_extract_frame_skips_the_seek_for_the_first_frame(monkeypatch):
+    """Regression: '-ss 0' before -i made ffmpeg output nothing for still
+    JPEGs, so photos never got a thumbnail, a preview, or a crop box frame."""
+    import subprocess
+    import probe
+    seen = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, b"png", b"")
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+    probe.extract_frame_png("photo.jpg", 0.0)
+    probe.extract_frame_png("clip.mp4", 12.5)
+    assert "-ss" not in seen[0]
+    assert seen[1][seen[1].index("-ss") + 1] == "12.500"

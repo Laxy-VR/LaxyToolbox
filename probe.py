@@ -108,8 +108,11 @@ def extract_frame_png(path: str, seconds: float, max_width: int | None = 320) ->
     """Grab one frame at `seconds` as PNG bytes (for preview thumbnails).
     `max_width=None` keeps the source resolution (for saving real stills)."""
     scale = ["-vf", f"scale={max_width}:-1"] if max_width else []
-    cmd = [FFMPEG, "-ss", f"{max(seconds, 0):.3f}", "-i", path,
-           "-frames:v", "1"] + scale + \
+    # No seek for the first frame: an input side -ss on a still JPEG makes
+    # ffmpeg output nothing (exit code 0, zero bytes), which left every photo
+    # without a queue thumbnail, an Images tab preview, or a crop box frame.
+    seek = ["-ss", f"{seconds:.3f}"] if seconds > 0 else []
+    cmd = [FFMPEG, *seek, "-i", path, "-frames:v", "1"] + scale + \
           ["-f", "image2pipe", "-vcodec", "png", "-"]
     try:
         r = subprocess.run(cmd, capture_output=True, creationflags=NO_WINDOW,

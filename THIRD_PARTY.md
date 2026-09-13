@@ -1,31 +1,40 @@
 # Third party software
 
-Laxy's Toolbox itself is MIT licensed (see LICENSE). The distributed
-Windows executable bundles or uses the following software, each under its own
-license:
+Laxy's Toolbox itself is MIT licensed (see [LICENSE](LICENSE)). The Windows
+executable includes or uses the following software, each under its own
+license.
 
-## Bundled in the executable
-- **FFmpeg (ffmpeg.exe, ffprobe.exe)** · GPL v3 build by gyan.dev, including
-  x264 and x265. FFmpeg is a separate program invoked by this app, not linked
-  into it. Source code and build details: https://ffmpeg.org and
-  https://www.gyan.dev/ffmpeg/builds/
-- **Gifsicle (gifsicle.exe)** · GPL v2, by Eddie Kohler. A separate program
-  invoked for the lossy GIF option, not linked into the app. Source:
-  https://www.lcdf.org/gifsicle/ · Windows builds:
-  https://eternallybored.org/misc/gifsicle/
-- **CustomTkinter** · MIT · https://github.com/TomSchimansky/CustomTkinter
-- **tkinterdnd2 / tkdnd** · MIT · https://github.com/pmgagne/tkinterdnd2
-- **Pillow** · MIT-CMU (HPND) · https://python-pillow.org
-- **Python** and its standard library · PSF license · https://python.org
-- **Fonts**: DM Sans, JetBrains Mono, IBM Plex Mono · SIL Open Font License
-  1.1 (see fonts/OFL.txt)
+## Bundled programs
 
-## Fetched at first use (not bundled)
-- **yt-dlp** · Unlicense (public domain) · downloaded from its official
-  GitHub releases for the link download feature and updated in place ·
-  https://github.com/yt-dlp/yt-dlp
+These are separate programs that the app runs; they are not linked into it.
+
+| Software | License | Source |
+|---|---|---|
+| **FFmpeg** 7.1.1 (`ffmpeg.exe`, `ffprobe.exe`), gyan.dev full build, which includes x264, x265, SVT-AV1, libaom, libwebp, and other libraries | GPL v3 | https://ffmpeg.org · build details: https://www.gyan.dev/ffmpeg/builds/ |
+| **Gifsicle** 1.95 (`gifsicle.exe`) by Eddie Kohler, used for the lossy GIF option | GPL v2 | https://www.lcdf.org/gifsicle/ · Windows builds: https://eternallybored.org/misc/gifsicle/ |
+
+## Bundled libraries
+
+| Software | License | Source |
+|---|---|---|
+| **Python** runtime and standard library | PSF License | https://www.python.org |
+| **Tcl/Tk** 8.6 | Tcl/Tk License (BSD style) | https://www.tcl-lang.org |
+| **CustomTkinter** | MIT | https://github.com/TomSchimansky/CustomTkinter |
+| **darkdetect** (used by CustomTkinter) | BSD 3-Clause | https://github.com/albertosottile/darkdetect |
+| **packaging** (used by CustomTkinter) | Apache 2.0 or BSD 2-Clause | https://github.com/pypa/packaging |
+| **tkinterdnd2** | MIT | https://github.com/pmgagne/tkinterdnd2 |
+| **tkdnd** 2.10.1, the drag and drop library tkinterdnd2 wraps, by Georgios Petasis | BSD style | https://github.com/petasis/tkdnd |
+| **Pillow**, including the image libraries its wheels ship (listed in Pillow's own license file) | MIT-CMU | https://python-pillow.org |
+| **Fonts:** DM Sans, JetBrains Mono, IBM Plex Mono | SIL Open Font License 1.1 (see [fonts/OFL.txt](fonts/OFL.txt)) | |
+
+## Downloaded on first use (not bundled)
+
+| Software | License | Source |
+|---|---|---|
+| **yt-dlp**, fetched from its official GitHub releases (checksum verified) for the Download tab, and updated in place | Unlicense (public domain); its Windows exe includes components under their own licenses | https://github.com/yt-dlp/yt-dlp |
 
 ## Build tooling
-- **PyInstaller** · GPL v2 with the Bootloader Exception, which permits
-  distributing the produced executable under any license ·
-  https://pyinstaller.org
+
+| Software | License | Source |
+|---|---|---|
+| **PyInstaller**, which packages the app into one exe | GPL v2 with the Bootloader Exception, which allows distributing the produced executable under any license | https://pyinstaller.org |

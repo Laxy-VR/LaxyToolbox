@@ -207,6 +207,19 @@ def test_rotated_video_reports_decoded_shape(clip, tmp_path):
     assert (cropped.width, cropped.height) == (240, 160)
 
 
+def test_still_jpeg_gives_a_preview_frame(tmp_path):
+    """Regression: an input side '-ss 0' on a still JPEG produced zero bytes
+    with exit code 0, so photos had no thumbnail, preview, or crop frame."""
+    import io
+    from PIL import Image
+    from probe import extract_frame_png
+    photo = str(tmp_path / "IMG_0001.JPG")
+    subprocess.run([FFMPEG, "-y", "-f", "lavfi", "-i", "testsrc2=size=640x480",
+                    "-frames:v", "1", photo], capture_output=True, check=True)
+    png = extract_frame_png(photo, 0.0, max_width=96)
+    assert png and Image.open(io.BytesIO(png)).size == (96, 72)
+
+
 def test_rotate_and_subtitles_end_to_end(clip):
     """Rotate swaps the frame and the burn-in filter accepts a Windows path."""
     srt = os.path.join(os.path.dirname(clip), "burn me's.srt")
