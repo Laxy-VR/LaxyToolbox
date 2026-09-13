@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.7.1 · 2026-09-13
 - **Fixed: converting a photo could replace the original.** A camera file
   like `IMG_0001.JPG` converted to JPEG in its own folder was written over
   itself (Windows treats `.JPG` and `.jpg` as the same file). Outputs now
