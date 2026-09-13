@@ -3,7 +3,7 @@
 Every release, newest first. Download the app from the
 [releases page](https://github.com/Laxy-VR/LaxyToolbox/releases).
 
-## Unreleased
+## v1.7.2 · 2026-09-13
 - **Fixed: JPEG photos showed no thumbnail** in the queue and no preview on
   the Images tab, and **Crop this file** on a JPEG said it could not read a
   frame.
