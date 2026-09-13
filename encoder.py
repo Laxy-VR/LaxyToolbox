@@ -33,6 +33,14 @@ def _subtitles_filter(path: str) -> str:
     return f"subtitles=filename={p}"
 
 
+def _x265_stats(passlog: str) -> str:
+    """x265's stats file for a 2-pass log prefix, escaped for -x265-params.
+
+    That option is a key=value:key=value string, so a drive colon would end
+    the value early; forward slashes sidestep backslash escapes entirely."""
+    return _escape_chars(passlog.replace("\\", "/") + ".log", "\\':")
+
+
 def _video_filters(settings: dict) -> str:
     """Build the -vf filter chain from optional rotate / downscale / fps /
     subtitle changes.
@@ -96,6 +104,13 @@ def _atempo_chain(speed: float) -> list[str]:
         speed *= 2
     chain.append(f"atempo={speed:g}")
     return chain
+
+
+def _amix(n: int) -> str:
+    """amix over `n` tracks at their recorded levels. amix's default
+    normalize=1 divides every input by the track count, so game + mic came
+    out at half volume; summing matches what OBS played while recording."""
+    return f"amix=inputs={n}:duration=longest:normalize=0"
 
 
 def _audio_args(settings: dict) -> list[str]:
@@ -252,8 +267,7 @@ def _track_args(settings: dict):
     n = int(settings.get("audio_track_count") or 0)
     if n < 2:
         return [], None  # nothing to mix; keep the default streams
-    chain = ["".join(f"[0:a:{i}]" for i in range(n))
-             + f"amix=inputs={n}:duration=longest"]
+    chain = ["".join(f"[0:a:{i}]" for i in range(n)) + _amix(n)]
     chain += _atempo_chain(float(settings.get("speed") or 1.0))
     if settings["audio_mode"] == "boost":
         chain.append("loudnorm=I=-16:TP=-1.5:LRA=11")
@@ -295,8 +309,13 @@ def build_stages(input_path: str, output_path: str, settings: dict, mode: str,
         common = base + ["-c:v", info["cpu"], "-preset", str(settings["preset"]),
                          "-b:v", vb] + _pix_args(settings, gpu)
         if codec == "h265":
-            p1 = ["-x265-params", "pass=1", "-passlogfile", passlog]
-            p2 = ["-x265-params", "pass=2", "-passlogfile", passlog]
+            # x265 ignores ffmpeg's -passlogfile and would write its stats
+            # (x265_2pass.log + .cutree) into the working directory: litter
+            # next to the exe, or a failed encode where that folder is read
+            # only. Its own stats= option keeps them at the passlog prefix.
+            stats = _x265_stats(passlog)
+            p1 = ["-x265-params", f"pass=1:stats={stats}"]
+            p2 = ["-x265-params", f"pass=2:stats={stats}"]
         else:  # x264 uses native -pass flags
             p1 = ["-pass", "1", "-passlogfile", passlog]
             p2 = ["-pass", "2", "-passlogfile", passlog]
@@ -498,8 +517,7 @@ def build_audio_stages(input_path: str, output_path: str, settings: dict,
 
     chain = []
     if mix:
-        chain.append("".join(f"[0:a:{i}]" for i in range(n))
-                     + f"amix=inputs={n}:duration=longest")
+        chain.append("".join(f"[0:a:{i}]" for i in range(n)) + _amix(n))
     chain += _atempo_chain(float(settings.get("aud_speed") or 1.0))
     if settings.get("aud_normalize"):
         # EBU R128 loudness normalisation; loudnorm resamples to 192 kHz
@@ -633,7 +651,8 @@ def suggest_parts(duration: float, max_mb: float, width: int, height: int,
 
 def cleanup_passlogs(passlog: str) -> None:
     """Remove the stats files a 2-pass encode leaves behind."""
-    for path in glob.glob(passlog + "*"):
+    # escape: a temp folder with [ ] in its name is a glob pattern otherwise
+    for path in glob.glob(glob.escape(passlog) + "*"):
         try:
             os.remove(path)
         except OSError:

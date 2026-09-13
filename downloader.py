@@ -6,43 +6,82 @@ sites change their internals and keep working without rebuilding the app.
 It cannot download DRM-protected content; such links simply fail.
 """
 
+import hashlib
 import os
 import re
+import shutil
 import subprocess
+import tempfile
+import threading
 import time
 import urllib.request
 from collections import deque
 
 from probe import NO_WINDOW, FFMPEG
-from sysutil import track_child, untrack_child
+from sysutil import DATA_DIR, kill_tree, track_child, untrack_child
 
 YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-APPDATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA")
-                           or os.path.expanduser("~"), "LaxyCompressor")
+YTDLP_SUMS_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS"
+APPDATA_DIR = DATA_DIR
 YTDLP_PATH = os.path.join(APPDATA_DIR, "yt-dlp.exe")
 DL_LOG_PATH = os.path.join(APPDATA_DIR, "last_download.log")
+
+# download() returns this when yt-dlp.exe itself will not start (a damaged
+# copy); the retry then fetches a fresh one instead of asking it to update.
+DAMAGED = "the downloader file was damaged"
 
 
 def has_ytdlp() -> bool:
     return os.path.exists(YTDLP_PATH)
 
 
+def _expected_sha256() -> str:
+    """yt-dlp.exe's published SHA256, from the release's SHA2-256SUMS."""
+    with urllib.request.urlopen(YTDLP_SUMS_URL, timeout=30) as r:
+        text = r.read().decode("utf-8", "replace")
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("*") == "yt-dlp.exe":
+            return parts[0].lower()
+    raise RuntimeError("could not verify the downloader (no checksum published)")
+
+
 def fetch_ytdlp(on_progress=None) -> None:
-    """Download yt-dlp.exe from the official release (about 17 MB, one time)."""
+    """Download yt-dlp.exe from the official release (about 17 MB, one time).
+
+    Verified before it is kept: a connection that drops early just ends the
+    stream, and a truncated exe would otherwise sit there failing every
+    download forever (has_ytdlp only checks that the file exists).
+    """
     os.makedirs(APPDATA_DIR, exist_ok=True)
+    expected = _expected_sha256()
     tmp = YTDLP_PATH + ".part"
-    with urllib.request.urlopen(YTDLP_URL, timeout=60) as r, open(tmp, "wb") as f:
-        total = int(r.headers.get("Content-Length") or 0)
-        got = 0
-        while True:
-            chunk = r.read(65536)
-            if not chunk:
-                break
-            f.write(chunk)
-            got += len(chunk)
-            if on_progress and total:
-                on_progress(got / total)
-    os.replace(tmp, YTDLP_PATH)
+    try:
+        digest = hashlib.sha256()
+        with urllib.request.urlopen(YTDLP_URL, timeout=60) as r, open(tmp, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            got = 0
+            while True:
+                chunk = r.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+                digest.update(chunk)
+                got += len(chunk)
+                if on_progress and total:
+                    on_progress(got / total)
+        if total and got != total:
+            raise RuntimeError("the downloader download was cut off; try again")
+        if digest.hexdigest() != expected:
+            raise RuntimeError("the downloader download did not match its "
+                               "published checksum; try again")
+        os.replace(tmp, YTDLP_PATH)
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
 
 
 def update_ytdlp() -> None:
@@ -163,6 +202,39 @@ def newest_media_file(outdir: str, since: float):
     return files[-1] if files else None
 
 
+def free_name(path: str) -> str:
+    """`path`, or "name (2).ext", "name (3).ext"… when that file exists."""
+    stem, ext = os.path.splitext(path)
+    candidate, n = path, 2
+    while os.path.exists(candidate):
+        candidate = f"{stem} ({n}){ext}"
+        n += 1
+    return candidate
+
+
+def _move_out(paths, outdir):
+    """Move finished downloads from the staging folder into `outdir`."""
+    moved = []
+    for p in paths:
+        dest = free_name(os.path.join(outdir, os.path.basename(p)))
+        try:
+            os.replace(p, dest)
+            moved.append(dest)
+        except OSError:
+            pass
+    return moved
+
+
+def _remove_tree(path, attempts=10):
+    """Delete the staging folder; a just-killed yt-dlp can hold its files
+    for a moment, so retry briefly before giving up."""
+    for _ in range(attempts):
+        shutil.rmtree(path, ignore_errors=True)
+        if not os.path.exists(path):
+            return
+        time.sleep(0.3)
+
+
 def download(url: str, outdir: str, on_progress, cancel_event, max_height=None,
              audio_only=False, cookies_browser=None, playlist=False,
              on_item=None):
@@ -172,19 +244,47 @@ def download(url: str, outdir: str, on_progress, cancel_event, max_height=None,
     empty on failure. error is None on success and "cancelled" when the
     caller's cancel_event fired. `on_item(index, total)` reports progress
     through a playlist.
+
+    yt-dlp writes into a private staging folder inside `outdir`; finished
+    files move out at the end. That way the sweep for mangled file names only
+    ever sees this download's own files (never a browser download or another
+    job's output landing in the same folder), and a cancel or failure
+    deletes its partial files wholesale.
     """
     os.makedirs(outdir, exist_ok=True)
+    staging = tempfile.mkdtemp(prefix=".laxy_download_", dir=outdir)
+    try:
+        paths, err = _download_into(staging, url, on_progress, cancel_event,
+                                    max_height, audio_only, cookies_browser,
+                                    playlist, on_item)
+        return _move_out(paths, outdir), err
+    finally:
+        _remove_tree(staging)
+
+
+def _download_into(staging, url, on_progress, cancel_event, max_height,
+                   audio_only, cookies_browser, playlist, on_item):
     # A playlist keeps its running order via the index prefix; a single video
     # just uses its title.
     template = os.path.join(
-        outdir, "%(playlist_index)s · %(title).70s.%(ext)s" if playlist
+        staging, "%(playlist_index)s · %(title).70s.%(ext)s" if playlist
         else "%(title).80s.%(ext)s")
     cmd = build_dl_command(url, template, max_height, audio_only,
                            cookies_browser, playlist)
     started = time.time()
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, encoding="utf-8", errors="replace",
-                            bufsize=1, creationflags=NO_WINDOW)
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True,
+                                encoding="utf-8", errors="replace", bufsize=1,
+                                creationflags=NO_WINDOW)
+    except OSError as e:
+        if getattr(e, "winerror", None) in (193, 216):  # not a valid exe
+            try:
+                os.remove(YTDLP_PATH)
+            except OSError:
+                pass
+            return [], DAMAGED
+        raise
     track_child(proc)
     filepaths = []
     seen = set()
@@ -195,14 +295,21 @@ def download(url: str, outdir: str, on_progress, cancel_event, max_height=None,
             seen.add(norm)
             filepaths.append(path)
 
+    def watch_cancel():
+        # Cancel must work even while yt-dlp prints nothing (an ffmpeg merge
+        # of a long 4K video can be silent for minutes), so it is watched
+        # here rather than between output lines. Killing the whole tree
+        # closes the pipe, which ends the read loop below.
+        while proc.poll() is None:
+            if cancel_event.wait(0.3):
+                kill_tree(proc)
+                return
+
+    threading.Thread(target=watch_cancel, daemon=True).start()
     tail = deque(maxlen=15)
     log_lines = [f"$ {' '.join(cmd)}"]
     try:
         for line in proc.stdout:
-            if cancel_event.is_set():
-                proc.terminate()
-                proc.wait()
-                return filepaths, "cancelled"
             line = line.strip()
             if not line:
                 continue
@@ -224,11 +331,14 @@ def download(url: str, outdir: str, on_progress, cancel_event, max_height=None,
             f.write("\n".join(log_lines) + f"\nexit code: {proc.returncode}\n")
     except OSError:
         pass
+    if cancel_event.is_set():
+        # Files yt-dlp reported as finished stay; partials go with staging.
+        return [p for p in filepaths if os.path.exists(p)], "cancelled"
     # A non-ASCII title mangles the printed path, so reconcile against what
-    # actually landed on disk since we started (also catches a mangled single
-    # file). For a playlist this recovers any items we couldn't read a path for.
+    # actually landed in staging (also catches a mangled single file). For a
+    # playlist this recovers any items we couldn't read a path for.
     if not filepaths or playlist:
-        for extra in media_files_since(outdir, started):
+        for extra in media_files_since(staging, started):
             remember(extra)
     if filepaths:
         return filepaths, None
@@ -247,12 +357,16 @@ def download_with_update_retry(url, outdir, on_progress, cancel_event,
 
     Sites change their internals constantly and a stale yt-dlp is the most
     common cause of failures, so one automatic update-and-retry fixes most of
-    them without the user doing anything.
+    them without the user doing anything. A damaged yt-dlp.exe cannot update
+    itself, so that case fetches a fresh copy instead.
     """
     paths, err = download(url, outdir, on_progress, cancel_event, max_height,
                           audio_only, cookies_browser, playlist, on_item)
     if paths or err == "cancelled" or cancel_event.is_set():
         return paths, err
-    update_ytdlp()
+    if err == DAMAGED:
+        fetch_ytdlp()
+    else:
+        update_ytdlp()
     return download(url, outdir, on_progress, cancel_event, max_height,
                     audio_only, cookies_browser, playlist, on_item)

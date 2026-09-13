@@ -20,8 +20,8 @@ workflow.
 | `models.py` | Constants (tabs, modes, dropdown options), the `Job` dataclass, small pure helpers (`status_display`, `unique_path`, `kind_icon`). |
 | `encoder.py` | Builds and runs every ffmpeg command: `build_stages` (video, all codecs and modes), `build_gif_stages`, `build_image_stages`, `build_audio_stages`, `build_cut_stages`, plus the size math (`video_bitrate_for_target`, `suggest_parts`). |
 | `planner.py` | Pure planning: `plan_job` turns one queued job + mode + settings snapshot into `(label, command, duration)` stages and 2 pass log paths; `estimate_output_bytes` backs the per-row size predictions; the Target size roomy/tight decision lives here. No widgets or threads, fully unit tested. |
-| `probe.py` | Reads metadata via ffprobe (`probe_video` → `VideoInfo`), recommends settings, resolves the bundled ffmpeg/ffprobe/gifsicle paths, detects GPU encoders (`gpu_codecs`, `nvenc_works`), extracts preview frames. |
-| `downloader.py` | yt-dlp integration: fetch and self update the binary, build the download command, parse progress, locate the finished file. |
+| `probe.py` | Reads metadata via ffprobe (`probe_video` → `VideoInfo`, reporting the decoded orientation), recommends settings, resolves the bundled ffmpeg/ffprobe/gifsicle paths, detects GPU encoders (`gpu_vendors`, `gpu_works`), extracts preview frames. |
+| `downloader.py` | yt-dlp integration: fetch (checksum verified) and self update the binary, build the download command, parse progress, download through a private staging folder, locate the finished file. |
 | `updater.py` | In-app updating: release asset lookup (with GitHub's per-asset sha256 digest), verified streaming download, and the rename swap that replaces the running exe. Pure functions returning error strings; the GUI flow lives in `gui_run.py`. |
 | `widgets.py` | `QueueRow` (the per file list item, draggable), `Tooltip` (static or live text), and `RangeSlider` (the two handle Canvas slider behind the GIF clip and trim ranges). |
 | `sysutil.py` | Windows helpers: keep awake, taskbar flash and real taskbar progress (ITaskbarList3 via ctypes), bundled resource paths, GitHub release lookup, self relaunch with a reset PyInstaller environment, and the child process registry (`track_child` / `terminate_children`) that stops window close from orphaning ffmpeg or yt-dlp. |
@@ -267,12 +267,55 @@ ingredients.
   (`test_rotate_and_subtitles_end_to_end`) burns a real subtitle from a path
   with an apostrophe to keep this honest.
 
+### Output paths never land on a source
+- Windows paths are case-insensitive: `IMG_0001.JPG` converted to JPEG is
+  `IMG_0001.jpg`, the SAME file, and ffmpeg happily rewrote the original in
+  place. Compare paths with `models.same_path` / `norm_path`, never raw
+  `os.path.abspath` equality.
+- `on_start` seeds `unique_path`'s claimed set with every queued source
+  before planning outputs, so no output can take a path another job still
+  has to read (and same named inputs can't overwrite each other's results).
+
+### Rotation metadata
+- Phones store portrait video as landscape plus a Display Matrix rotation,
+  and ffmpeg autorotates whenever it decodes. `probe_video` swaps width and
+  height for 90/270 so `VideoInfo` describes the picture every filter
+  (crop box, scale, estimates) actually sees.
+
+### Child processes
+- `yt-dlp.exe` is a PyInstaller onefile: the process we start is only a
+  launcher and the real downloader is its child. `proc.terminate()` leaves
+  that child (and its ffmpeg merge) running; always stop children with
+  `sysutil.kill_tree` (taskkill /T).
+- Downloads write into a private `.laxy_download_*` staging folder inside
+  the output folder and move out when done, so the mangled-path sweep can't
+  adopt a browser download or another job's output, and a cancel deletes
+  its partials wholesale. Cancel is watched from its own thread: a long
+  ffmpeg merge prints nothing for minutes.
+- Anything the app downloads and later runs must be length checked (a
+  dropped connection just ends the stream early) and hash verified:
+  `updater.download` against GitHub's asset digest, `fetch_ytdlp` against
+  yt-dlp's SHA2-256SUMS. A damaged yt-dlp.exe (WinError 193/216) is deleted
+  and refetched, since it can't run `-U` to repair itself.
+
+### Errors that would otherwise vanish
+- The windowed exe has no console. `_poll_queue` reschedules in a `finally`
+  and logs a failing message instead of dying; the encode and sample workers
+  always post their done message; Tk callback exceptions go through
+  `App.report_callback_exception`. All of it lands in
+  `%LOCALAPPDATA%\LaxyCompressor\errors.log` (`sysutil.log_error`).
+- A worker that needs a main thread call posts `("ui", fn, *args)` rather
+  than calling `widget.after` itself (that is still a Tk call from the wrong
+  thread).
+
 ### Misc
 - One quality slider maps across codec scales via `CODECS[...]["crf_off"]`
   (x265 CRF 23 ≈ x264 CRF 19 ≈ SVT-AV1 CRF 30).
-- x265 two pass uses `-x265-params pass=N`; x264 uses native `-pass N`;
-  SVT-AV1 target mode is single pass ABR.
-- Output paths are deduplicated per batch (`unique_path`) so same named
-  inputs cannot overwrite each other's results.
+- x265 two pass uses `-x265-params pass=N:stats=<passlog>.log`: x265 ignores
+  `-passlogfile` and would otherwise write `x265_2pass.log` into the working
+  directory (a read-only one fails the encode). x264 uses native `-pass N`
+  with `-passlogfile`; SVT-AV1 target mode is single pass ABR.
+- "Mix all tracks" uses `amix ... normalize=0`: the default divides every
+  track by the track count, halving game and mic volume.
 - The config lives at `~/.laxy_compressor.json`; the last download log at
   `%LOCALAPPDATA%\LaxyCompressor\last_download.log`.

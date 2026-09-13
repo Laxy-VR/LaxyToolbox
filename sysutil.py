@@ -2,8 +2,36 @@
 and a registry of child processes so closing the app never orphans an ffmpeg."""
 
 import os
+import subprocess
 import sys
 import threading
+
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+# Per-user app data: the fetched yt-dlp, the last download log, errors.log.
+DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+                        "LaxyCompressor")
+ERROR_LOG = os.path.join(DATA_DIR, "errors.log")
+
+
+def log_error(context: str, exc_info=None) -> None:
+    """Append the exception being handled (or `exc_info`) to errors.log.
+
+    The windowed exe has no console, so without this an unexpected error
+    vanishes and only its symptom (a frozen or stuck UI) is left to report.
+    """
+    import time
+    import traceback
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        big = os.path.exists(ERROR_LOG) and os.path.getsize(ERROR_LOG) > 1_000_000
+        text = ("".join(traceback.format_exception(*exc_info)) if exc_info
+                else traceback.format_exc())
+        with open(ERROR_LOG, "w" if big else "a", encoding="utf-8") as f:
+            f.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} · {context}\n{text}\n")
+    except OSError:
+        pass
+
 
 # Long-running children (ffmpeg encodes, yt-dlp downloads) register here so
 # the app can kill them on exit. Daemon threads die with the process, but
@@ -22,8 +50,35 @@ def untrack_child(proc):
         _children.discard(proc)
 
 
+def kill_tree(proc) -> None:
+    """Stop a child process AND everything it started.
+
+    proc.terminate() only stops the process itself. yt-dlp.exe is a
+    PyInstaller onefile build: the process we start is a small launcher, the
+    real downloader is its child (and an ffmpeg merge a grandchild), so a
+    plain terminate leaves the actual download running headless.
+    """
+    try:
+        if proc.poll() is not None:
+            return
+    except OSError:
+        return
+    if sys.platform == "win32":
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=10,
+                           creationflags=_NO_WINDOW)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    try:
+        if proc.poll() is None:
+            proc.kill()
+    except OSError:
+        pass
+
+
 def terminate_children(timeout: float = 3.0) -> None:
-    """Terminate every registered child process and wait briefly for each.
+    """Kill every registered child process tree and wait briefly for each.
 
     Called on window close; the short wait releases file locks so partial
     output files can be deleted before the process exits.
@@ -31,11 +86,7 @@ def terminate_children(timeout: float = 3.0) -> None:
     with _children_lock:
         procs = list(_children)
     for proc in procs:
-        try:
-            if proc.poll() is None:
-                proc.terminate()
-        except OSError:
-            pass
+        kill_tree(proc)
     for proc in procs:
         try:
             proc.wait(timeout=timeout)
@@ -270,21 +321,20 @@ def is_newer_version(latest: str, current: str) -> bool:
     return _version_tuple(latest) > _version_tuple(current)
 
 
-def latest_release(repo: str):
-    """(version, page_url) of the newest GitHub release, or (None, None).
+def point_on_screen(x: int, y: int) -> bool:
+    """True when (x, y) lies on a connected monitor (always True off Windows).
 
-    Anonymous API call; failures (offline, rate limit, no releases yet) are
-    swallowed because an update check must never break the app.
+    A restored window position can point at a monitor that has since been
+    unplugged, which opens the app somewhere nobody can see or drag it.
     """
-    import json
-    import urllib.request
+    if sys.platform != "win32":
+        return True
     try:
-        req = urllib.request.Request(
-            f"https://api.github.com/repos/{repo}/releases/latest",
-            headers={"Accept": "application/vnd.github+json",
-                     "User-Agent": "LaxyCompressor"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.load(r)
-        return data.get("tag_name"), data.get("html_url")
-    except Exception:  # noqa: BLE001
-        return None, None
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+        user32.MonitorFromPoint.restype = ctypes.c_void_p
+        return bool(user32.MonitorFromPoint(wintypes.POINT(x, y), 0))  # DEFAULTTONULL
+    except Exception:  # noqa: BLE001 - when unsure, trust the saved position
+        return True

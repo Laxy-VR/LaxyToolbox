@@ -14,9 +14,9 @@ from encoder import (gif_output_duration, suggest_parts,
                      video_bitrate_for_target)
 from models import (MODE_TARGET, MODE_SPLIT, MODE_GIF, MODE_IMAGE, MODE_AUDIO,
                     MODE_DOWNLOAD, RESOLUTIONS, FPS_OPTIONS, AUDIO_OPTIONS,
-                    PARTS_OPTIONS, IMG_FORMAT_OPTIONS, is_image, is_audio,
-                    human_size, parse_time)
-from planner import estimate_output_bytes, gif_output_dims
+                    PARTS_OPTIONS, IMG_FORMAT_OPTIONS, SPEED_OPTIONS, is_image,
+                    is_audio, human_size, parse_time)
+from planner import estimate_output_bytes, gif_output_dims, trimmed_duration
 from probe import VideoInfo, recommend_settings, estimate_h265_bitrate_kbps
 
 
@@ -43,9 +43,9 @@ class NotesMixin:
             self.note_label.configure(text="")
             return
         if mode == MODE_TARGET:
-            self.note_label.configure(text=self._target_note(job.info))
+            self.note_label.configure(text=self._target_note(job))
         elif mode == MODE_SPLIT:
-            self.note_label.configure(text=self._split_note(job.info))
+            self.note_label.configure(text=self._split_note(job))
         elif mode == MODE_GIF:
             self.note_label.configure(text=self._gif_note(job.info))
         elif mode == MODE_IMAGE:
@@ -57,7 +57,7 @@ class NotesMixin:
                 f"to {fmt}. Images are skipped on this tab."))
         else:
             note = recommend_settings(job.info).get("note", "")
-            est = self._quality_estimate(job.info)
+            est = self._quality_estimate(job)
             warn = ""
             th = dict(RESOLUTIONS)[self.res_menu.get()]
             tf = dict(FPS_OPTIONS)[self.fps_menu.get()]
@@ -76,6 +76,23 @@ class NotesMixin:
             return not is_image(job.path) and bool(job.info.audio_codec)
         return not is_image(job.path) and not is_audio(job.path)
 
+    def _shared_trim(self):
+        """(start, end) from the shared Trim fields, or None when unset or
+        unreadable. end may be None (to the end of the file)."""
+        ts = parse_time(self.trim_start.get()) if self.trim_start.get().strip() else 0.0
+        te = parse_time(self.trim_end.get()) if self.trim_end.get().strip() else None
+        if ts is None:
+            return None
+        return (ts, te) if (ts > 0 or te is not None) else None
+
+    def _output_seconds(self, job) -> float:
+        """Seconds of video a Compress run would produce for `job`: after its
+        trim (per-file wins over shared, like plan_job) and the speed change.
+        The notes must size parts and bitrates on this, not the source."""
+        dur = trimmed_duration(job.info.duration, job.trim or self._shared_trim())
+        speed = dict(SPEED_OPTIONS)[self.speed_menu.get()] or 1.0
+        return dur / speed
+
     def _refresh_estimates(self):
         """Recompute the rough output size shown on each ready row."""
         if self.start_btn.cget("state") == "disabled":
@@ -87,12 +104,7 @@ class NotesMixin:
         settings["cut_only"] = self._cut_only()
         settings["gif_start"] = parse_time(self.gif_start.get()) or 0
         settings["gif_len"] = parse_time(self.gif_len.get()) or 0
-        ts = parse_time(self.trim_start.get()) if self.trim_start.get().strip() else 0.0
-        te = parse_time(self.trim_end.get()) if self.trim_end.get().strip() else None
-        if ts is None:
-            settings["trim"] = None
-        else:
-            settings["trim"] = (ts, te) if (ts > 0 or te is not None) else None
+        settings["trim"] = self._shared_trim()
         try:
             size_mb = float(self.target_entry.get())
         except ValueError:
@@ -127,42 +139,48 @@ class NotesMixin:
     def _quality_word(bpp):
         return "good" if bpp >= 0.035 else "okay" if bpp >= 0.018 else "low"
 
-    def _quality_estimate(self, info: VideoInfo) -> str:
+    def _quality_estimate(self, job) -> str:
         """A rough predicted output size for constant-quality (CRF/CQ) encoding.
 
         Very content dependent, so it's clearly labelled as rough. Uses a simple
         x265 model: ~0.045 bits per pixel at CRF 23, halving every +6 CRF.
         """
+        info = job.info
         w, h, fps = self._effective_res_fps(info)
-        if not (w and h and fps and info.duration > 0):
+        dur = self._output_seconds(job)
+        if not (w and h and fps and dur > 0):
             return ""
         crf = int(self.crf_slider.get())
         vkbps = estimate_h265_bitrate_kbps(w, h, fps, crf, self._codec_value())
         audio_mode, audio_bitrate = dict(AUDIO_OPTIONS)[self.audio_menu.get()]
         akbps = 0 if audio_mode in ("copy", "none") \
             else int(str(audio_bitrate).rstrip("k"))
-        est_bytes = (vkbps + akbps) * 1000 * info.duration / 8
+        est_bytes = (vkbps + akbps) * 1000 * dur / 8
         if info.size_bytes:
             pct = (1 - est_bytes / info.size_bytes) * 100
             tail = f", {pct:.0f}% smaller" if pct >= 0 else ""
             return f"Estimated output ~{human_size(est_bytes)}{tail} (rough)."
         return f"Estimated output ~{human_size(est_bytes)} (rough)."
 
-    def _target_note(self, info: VideoInfo) -> str:
+    def _target_note(self, job) -> str:
+        info = job.info
         try:
             target_mb = float(self.target_entry.get())
         except ValueError:
             return "Enter a target size in MB."
         if info.duration <= 0:
             return "Unknown duration, so a size cannot be targeted for this file."
-        vkbps = video_bitrate_for_target(info.duration, target_mb, 128)
+        dur = self._output_seconds(job)  # what plan_job sizes: trim + speed
+        if dur <= 0:
+            return "The trim range is outside this file."
+        vkbps = video_bitrate_for_target(dur, target_mb, 128)
         if vkbps < 50:
             return "⚠ Target too small for this file. Raise the size or shorten the clip."
         w, h, fps = self._effective_res_fps(info)
         quality_kbps = estimate_h265_bitrate_kbps(
             w, h, fps, int(self.crf_slider.get()), self._codec_value())
         if quality_kbps and quality_kbps * 1.2 <= vkbps and w and h and fps:
-            est = quality_kbps * 1000 * info.duration / 8
+            est = quality_kbps * 1000 * dur / 8
             return (f"“{os.path.basename(info.path)}” fits well under "
                     f"{target_mb:.0f} MB: it will be encoded at full quality "
                     f"(~{human_size(est)}), with the limit as a safety cap. "
@@ -177,17 +195,23 @@ class NotesMixin:
             msg += "  Tight for that size. Try the Split to fit mode instead."
         return msg
 
-    def _split_note(self, info: VideoInfo) -> str:
+    def _split_note(self, job) -> str:
+        info = job.info
         try:
             max_mb = float(self.target_entry.get())
         except ValueError:
             return "Enter a max size per part in MB."
         if info.duration <= 0:
             return "Unknown duration, so this file cannot be split by size."
+        # Same seconds _outputs_for splits (trim + speed), so the part count
+        # promised here is the count the run actually makes.
+        dur = self._output_seconds(job)
+        if dur <= 0:
+            return "The trim range is outside this file."
         w, h, fps = self._effective_res_fps(info)
         chosen = dict(PARTS_OPTIONS)[self.parts_menu.get()]
-        n = chosen or suggest_parts(info.duration, max_mb, w, h, fps)
-        seg = info.duration / n
+        n = chosen or suggest_parts(dur, max_mb, w, h, fps)
+        seg = dur / n
         vkbps = video_bitrate_for_target(seg, max_mb, 128)
         bpp = (vkbps * 1000) / (w * h * fps) if w and h and fps else 0
         seg_m, seg_s = divmod(int(seg), 60)

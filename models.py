@@ -1,6 +1,7 @@
 """Shared constants, the Job model, and small formatting helpers."""
 
 import os
+import re
 from dataclasses import dataclass, field
 
 import theme
@@ -208,18 +209,29 @@ def kind_icon(path: str) -> str:
     return "🌐"  # a URL still downloading
 
 
+def norm_path(path: str) -> str:
+    """A path the way Windows compares them: absolute and case folded, so
+    IMG_0001.JPG and IMG_0001.jpg count as the same file (they are)."""
+    return os.path.normcase(os.path.abspath(path))
+
+
+def same_path(a: str, b: str) -> bool:
+    return norm_path(a) == norm_path(b)
+
+
 def unique_path(path: str, used: set) -> str:
-    """Keep two queue items from writing the same file (e.g. clip.mp4 and
-    clip.mkv, or same-named files from different folders with one shared
-    output folder). Appends _2, _3… until the path is unique in this batch.
-    `used` holds normalized paths already claimed and is updated in place."""
+    """Keep an output from landing on a file the batch already owns: another
+    item's output (clip.mp4 and clip.mkv, or same-named files from different
+    folders with one shared output folder) or, when the caller seeds `used`
+    with them, a queued source. Appends _2, _3… until the path is free.
+    `used` holds norm_path() paths and is updated in place."""
     candidate = path
     n = 2
-    while os.path.normcase(os.path.abspath(candidate)) in used:
+    while norm_path(candidate) in used:
         stem, ext = os.path.splitext(path)
         candidate = f"{stem}_{n}{ext}"
         n += 1
-    used.add(os.path.normcase(os.path.abspath(candidate)))
+    used.add(norm_path(candidate))
     return candidate
 
 
@@ -261,10 +273,14 @@ _ERROR_HINTS = [
     # disk and output file
     (("no space left", "not enough space", "disk full"),
      "Your disk is full. Free up some space and try again."),
-    (("permission denied", "error opening output", "could not open file",
-      "unable to open"),
+    (("permission denied", "error opening output", "could not open file"),
      "Could not save the file. Close it if it is open in a player, or choose a "
      "different output folder."),
+    # ffmpeg's subtitles filter says "Unable to open <file>" for a missing or
+    # unreadable subtitle; it is about an input, not the output.
+    (("unable to open",),
+     "The subtitle file could not be opened. Check it still exists and is a "
+     "valid .srt, .ass, or .vtt file."),
     # damaged or missing source
     (("moov atom not found", "invalid data found", "could not find codec "
       "parameters", "error while decoding", "header missing"),
@@ -274,6 +290,9 @@ _ERROR_HINTS = [
      "The source file was moved or deleted before it could be processed."),
     (("not divisible by 2", "divisible by 2"),
      "That video has an unusual size. Try a different resolution setting."),
+    (("invalid too big or non positive size",),
+     "The crop does not fit this video's picture. Redraw the crop box, or "
+     "pick No crop."),
     # GPU encoding
     (("cannot load nvcuda", "openencodesessionex", "no capable devices",
       "initializeencoder failed", "nvenc", "createcomponent", "_amf",
@@ -336,15 +355,32 @@ def friendly_error(raw) -> str:
     for needles, message in _ERROR_HINTS:
         if any(n in blob for n in needles):
             return message
-    # No known pattern: show the last line, minus noisy prefixes like
-    # "ERROR:" or "[youtube] abc123:" so it reads a little cleaner.
-    last = lines[-1]
+    # No known pattern: show the most telling line, minus noisy prefixes like
+    # "ERROR:" or "[youtube] abc123:". ffmpeg closes every failure with the
+    # same wrap up lines ("Conversion failed!") after -progress key=value
+    # pairs, so those are skipped in favour of the line naming the problem.
+    cleaned = [_strip_log_prefix(ln) for ln in lines]
+    useful = [ln for ln in cleaned
+              if ln and not _PROGRESS_LINE.match(ln)
+              and not ln.lower().startswith(_GENERIC_FAILURE_LINES)]
+    return (useful or cleaned)[-1] or "Something went wrong."
+
+
+_PROGRESS_LINE = re.compile(r"^[a-z0-9_]+=\S*$")
+_GENERIC_FAILURE_LINES = ("conversion failed", "nothing was written into output",
+                          "task finished with error code",
+                          "terminating thread with return code",
+                          "error while filtering", "error reinitializing filters",
+                          "failed to configure", "exiting normally")
+
+
+def _strip_log_prefix(line: str) -> str:
     for prefix in ("ERROR: ", "ERROR:"):
-        if last.startswith(prefix):
-            last = last[len(prefix):].strip()
-    if last.startswith("[") and "] " in last:
-        last = last.split("] ", 1)[1].strip()
-    return last or "Something went wrong."
+        if line.startswith(prefix):
+            line = line[len(prefix):].strip()
+    if line.startswith("[") and "] " in line:
+        line = line.split("] ", 1)[1].strip()
+    return line
 
 
 @dataclass

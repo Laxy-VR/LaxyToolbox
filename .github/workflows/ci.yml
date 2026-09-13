@@ -28,7 +28,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: pip install -r requirements.txt pytest ruff
+      # Tool versions are pinned so a new ruff rule or pytest release can't
+      # turn an unchanged commit red; bump them deliberately.
+      - run: pip install -r requirements.txt pytest==9.1.1 ruff==0.15.22
       - name: Lint
         run: ruff check .
       - name: Fetch pinned ffmpeg + gifsicle (for the smoke tests)
@@ -63,7 +65,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: pip install -r requirements.txt pyinstaller
+      - run: pip install -r requirements.txt pyinstaller==6.21.0
       - name: Fetch pinned ffmpeg + gifsicle (bundled into the exe)
         shell: pwsh
         run: |
@@ -88,6 +90,9 @@ jobs:
         shell: pwsh
         run: ./build.ps1
       - name: Attach exe to release
-        uses: softprops/action-gh-release@v2
+        # Third party action with write access to releases: pinned to the
+        # v2.6.2 commit, not a movable tag, so a hijacked tag can't swap the
+        # exe everyone's in-app updater downloads.
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: dist/Laxy Toolbox.exe

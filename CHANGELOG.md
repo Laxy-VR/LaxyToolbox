@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+- **Fixed: converting a photo could replace the original.** A camera file
+  like `IMG_0001.JPG` converted to JPEG in its own folder was written over
+  itself (Windows treats `.JPG` and `.jpg` as the same file). Outputs now
+  always avoid every queued source file, whatever the letter case.
+- **Fixed: Target size and Split to fit (H.265 on CPU) left `x265_2pass.log`
+  files** in whatever folder the app was started from, and failed outright
+  when that folder was read only.
+- **Fixed: cropping portrait phone videos.** Videos stored sideways with a
+  rotation flag (iPhone portrait clips) now report their real shape, so the
+  crop box, resolution menu, and size estimates all work on them.
+- **Fixed: cancelling a download really stops it**, even mid merge, and its
+  partial files are cleaned up. Downloads now finish in a private folder
+  first, so files from a browser or another job in the same folder are never
+  mistaken for the download.
+- **Fixed: a download of the downloader or an update that got cut off** is
+  now caught and retried, instead of breaking downloads (or the app) until
+  reinstalled. The downloader is also checked against its published checksum.
+- **Fixed: Remove black bars** did nothing for file names with Chinese,
+  Japanese, or similar characters.
+- **Mix all tracks keeps each track at its recorded volume** instead of
+  halving them.
+- Output files are named after the codec actually used (`_h265`, `_av1`,
+  `_h264`).
+- Clearer error messages for a missing subtitle file or a crop that does not
+  fit, the size notes now account for trim and speed, the crop dialog and
+  Save a frame no longer freeze the window, and the window reopens on screen
+  after unplugging a monitor.
+- Sturdier behind the scenes: an unexpected error can no longer freeze the
+  window or leave a batch stuck running (details go to `errors.log` in
+  `%LOCALAPPDATA%\LaxyCompressor`), settings are saved safely, and files
+  can't be added mid batch.
+
 ## v1.7.0 · 2026-07-18
 - **The app updates itself.** Clicking the update notice in the header now
   downloads the new version (verified against GitHub's checksum), installs

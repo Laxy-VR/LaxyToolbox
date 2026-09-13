@@ -148,6 +148,30 @@ def test_target_x265_is_two_pass():
     assert "-b:v 980k" in cmds[0]
 
 
+def test_target_x265_keeps_stats_at_the_passlog():
+    """Regression: x265 ignores -passlogfile and wrote x265_2pass.log into the
+    working directory. The stats path goes through x265's own stats= option,
+    escaped so a drive colon doesn't end the key=value:key=value string."""
+    s = _base(video_bitrate=980, audio_mode="aac")
+    cmds = build_stages("in.mp4", "out.mp4", s, "target",
+                        passlog=r"C:\Temp\vc_1_2_pass")
+    p1 = cmds[0][1][cmds[0][1].index("-x265-params") + 1]
+    p2 = cmds[1][1][cmds[1][1].index("-x265-params") + 1]
+    assert p1 == r"pass=1:stats=C\:/Temp/vc_1_2_pass.log"
+    assert p2 == r"pass=2:stats=C\:/Temp/vc_1_2_pass.log"
+    assert "-passlogfile" not in cmds[0][1]
+
+
+def test_cleanup_passlogs_handles_brackets_in_path(tmp_path):
+    from encoder import cleanup_passlogs
+    folder = tmp_path / "user[1]"
+    folder.mkdir()
+    for name in ("vc_pass.log", "vc_pass.log.cutree"):
+        (folder / name).write_bytes(b"x")
+    cleanup_passlogs(str(folder / "vc_pass"))
+    assert not list(folder.iterdir())
+
+
 def test_target_x264_uses_native_pass_flags():
     s = _base(codec="h264", video_bitrate=980, audio_mode="aac")
     cmds = joined(build_stages("in.mp4", "out.mp4", s, "target", passlog="pl"))
@@ -578,7 +602,7 @@ def test_audio_mix_builds_amix_graph():
     cmd = joined(build_stages("in.mp4", "out.mp4",
                               _base(audio_track="mix", audio_track_count=2),
                               "quality"))[0]
-    assert "[0:a:0][0:a:1]amix=inputs=2:duration=longest[aout]" in cmd
+    assert "[0:a:0][0:a:1]amix=inputs=2:duration=longest:normalize=0[aout]" in cmd
     assert "-map 0:v:0 -map [aout]" in cmd
     assert "-c:a aac" in cmd and "-c:a copy" not in cmd
 
@@ -590,7 +614,7 @@ def test_audio_mix_with_boost_joins_graph():
                               _base(audio_track="mix", audio_track_count=2,
                                     audio_mode="boost", audio_bitrate="192k"),
                               "quality"))[0]
-    assert "amix=inputs=2:duration=longest,loudnorm=" in cmd
+    assert "amix=inputs=2:duration=longest:normalize=0,loudnorm=" in cmd
     assert "-af" not in cmd and "-b:a 192k" in cmd
 
 
@@ -653,7 +677,7 @@ def test_speed_with_mix_joins_graph():
     cmd = joined(build_stages("in.mp4", "out.mp4",
                               _base(speed=2.0, audio_track="mix",
                                     audio_track_count=2), "quality"))[0]
-    assert "amix=inputs=2:duration=longest,atempo=2" in cmd
+    assert "amix=inputs=2:duration=longest:normalize=0,atempo=2" in cmd
 
 
 def test_gif_crop_filter_applies():

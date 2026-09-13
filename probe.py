@@ -9,6 +9,7 @@ from dataclasses import dataclass
 # On Windows, stop a console window from flashing up when we call ffprobe/ffmpeg
 # from inside the GUI. On other platforms this flag doesn't exist, so use 0.
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+PROBE_TIMEOUT = 60  # seconds; a healthy ffprobe answers in well under one
 
 
 def _tool_path(name: str) -> str:
@@ -49,7 +50,8 @@ def _encoders_list() -> str:
         try:
             r = subprocess.run([FFMPEG, "-hide_banner", "-encoders"],
                                capture_output=True, text=True, encoding="utf-8",
-                               errors="replace", creationflags=NO_WINDOW)
+                               errors="replace", creationflags=NO_WINDOW,
+                               timeout=30)
             _ENCODERS_CACHE = r.stdout or ""
         except Exception:  # noqa: BLE001
             _ENCODERS_CACHE = ""
@@ -129,7 +131,11 @@ def detect_crop(path: str, duration: float = 0.0):
         cmd = [FFMPEG, "-ss", f"{max(ss, 0):.1f}", "-t", "3", "-i", path,
                "-vf", "cropdetect=limit=24:round=2", "-f", "null", "-"]
         try:
+            # UTF-8 like every other call: the log echoes the file name, and
+            # cp1252 fails on bytes common in CJK names (detection then
+            # silently found nothing).
             r = subprocess.run(cmd, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace",
                                creationflags=NO_WINDOW, timeout=30)
         except Exception:  # noqa: BLE001 - detection is best-effort
             continue
@@ -203,6 +209,21 @@ def _parse_fraction(value: str) -> float:
         return 0.0
 
 
+def _rotation(stream: dict) -> int:
+    """A video stream's display rotation in degrees, normalised to 0..359.
+
+    ffprobe reports it as Display Matrix side data (current builds) or an
+    older "rotate" tag; phone videos use it for portrait recordings."""
+    candidates = [sd.get("rotation") for sd in stream.get("side_data_list") or []]
+    candidates.append((stream.get("tags") or {}).get("rotate"))
+    for value in candidates:
+        try:
+            return round(float(value)) % 360
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
 def probe_video(path: str) -> VideoInfo:
     """Run ffprobe and return a VideoInfo. Raises RuntimeError on failure."""
     cmd = [
@@ -212,11 +233,17 @@ def probe_video(path: str) -> VideoInfo:
         path,
     ]
     # ffprobe embeds the file name in its JSON; force UTF-8 so non-ASCII
-    # names never raise a decode error under the Windows locale codec.
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, encoding="utf-8",
-        errors="replace", creationflags=NO_WINDOW
-    )
+    # names never raise a decode error under the Windows locale codec. The
+    # timeout keeps one unreadable file (a sleeping network drive) from
+    # stalling every file queued behind it on "reading…".
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", creationflags=NO_WINDOW, timeout=PROBE_TIMEOUT
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Reading this file took too long. Is it on a drive "
+                           "that is asleep or disconnected?") from None
     if result.returncode != 0 or not result.stdout:
         raise RuntimeError(f"ffprobe failed:\n{result.stderr.strip()}")
 
@@ -233,10 +260,18 @@ def probe_video(path: str) -> VideoInfo:
     duration = float(fmt.get("duration") or src.get("duration") or 0.0)
     bit_rate = fmt.get("bit_rate") or src.get("bit_rate")
 
+    width = int(video.get("width", 0)) if video else 0
+    height = int(video.get("height", 0)) if video else 0
+    if video and _rotation(video) in (90, 270):
+        # Phones store portrait video as landscape plus a rotation flag, and
+        # ffmpeg applies that flag whenever it decodes. Report the picture as
+        # it actually decodes, or crop boxes and size math use swapped axes.
+        width, height = height, width
+
     return VideoInfo(
         path=path,
-        width=int(video.get("width", 0)) if video else 0,
-        height=int(video.get("height", 0)) if video else 0,
+        width=width,
+        height=height,
         duration=duration,
         fps=_parse_fraction(video.get("r_frame_rate", "0/1")) if video else 0.0,
         video_codec=video.get("codec_name", "unknown") if video else "none",

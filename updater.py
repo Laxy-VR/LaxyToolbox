@@ -76,6 +76,10 @@ def download(url: str, dest: str, sha256=None, on_progress=None, cancel=None):
                 got += len(chunk)
                 if on_progress and total:
                     on_progress(got / total)
+        # A dropped connection just ends the stream early; without a digest
+        # to catch it, installing that partial exe would brick the app.
+        if total and got != total:
+            return "the download was incomplete"
         if sha256 and digest.hexdigest().lower() != sha256.lower():
             return "the download did not match the release checksum"
         os.replace(tmp, dest)

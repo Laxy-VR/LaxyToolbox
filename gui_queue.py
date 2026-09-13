@@ -24,7 +24,18 @@ from widgets import QueueRow
 class QueueMixin:
 
     # ---------- adding / removing files ----------
+    def _queue_locked(self) -> bool:
+        """True (with a hint) while a batch runs. The queue is frozen until
+        it ends, like Remove and Clear, so files added now can't look like
+        they joined a run that will never process them."""
+        if self.start_btn.cget("state") != "disabled":
+            return False
+        self.status.configure(text="Finish or cancel the current batch first.")
+        return True
+
     def on_add_files(self):
+        if self._queue_locked():
+            return
         paths = filedialog.askopenfilenames(
             title="Choose videos or images",
             filetypes=[("Media files", " ".join(f"*{e}" for e in sorted(MEDIA_EXTS))),
@@ -32,6 +43,8 @@ class QueueMixin:
         self._add_paths(paths)
 
     def on_add_folder(self):
+        if self._queue_locked():
+            return
         folder = filedialog.askdirectory(title="Choose a folder of videos or images")
         if not folder:
             return
@@ -57,6 +70,8 @@ class QueueMixin:
 
     def _on_drop(self, event):
         """Handle files/folders dropped onto the window."""
+        if self._queue_locked():
+            return
         # tkdnd braces paths with spaces; parse with a regex rather than Tcl
         # splitlist, which would eat backslashes in Windows paths.
         tokens = re.findall(r"\{[^}]*\}|\S+", event.data)
@@ -73,8 +88,8 @@ class QueueMixin:
         Download tab. Paste inside a text field is left to the field."""
         if isinstance(self.focus_get(), tk.Entry):
             return
-        if self.start_btn.cget("state") == "disabled":
-            return  # queue is locked mid-run
+        if self._queue_locked():
+            return
         paths = self._expand_media(clipboard_file_paths())
         if paths:
             self._add_paths(paths)
@@ -401,23 +416,32 @@ class QueueMixin:
         if seconds is None or (dur and seconds > dur):
             self.status.configure(text="That time isn't inside the video.")
             return
-        png = extract_frame_png(job.path, seconds, max_width=None)
-        if not png:
-            self.status.configure(text="Could not read a frame at that time.")
-            return
-        stem = os.path.splitext(job.path)[0]
-        out = f"{stem}_frame_{seconds:g}s.png"
-        n = 2
-        while os.path.exists(out):  # never overwrite an earlier grab
-            out = f"{stem}_frame_{seconds:g}s_{n}.png"
-            n += 1
-        try:
-            with open(out, "wb") as f:
-                f.write(png)
-        except OSError as e:
-            self.status.configure(text=f"Could not save the frame: {e}")
-            return
-        self.status.configure(text=f"Frame saved · {os.path.basename(out)}")
+        self.status.configure(text="Saving the frame…")
+
+        def say(text):
+            self.msg_queue.put(("ui", lambda: self.status.configure(text=text)))
+
+        def work():
+            # A full resolution grab from deep in a 4K file can take seconds;
+            # doing it here keeps the window responsive meanwhile.
+            png = extract_frame_png(job.path, seconds, max_width=None)
+            if not png:
+                say("Could not read a frame at that time.")
+                return
+            stem = os.path.splitext(job.path)[0]
+            out = f"{stem}_frame_{seconds:g}s.png"
+            n = 2
+            while os.path.exists(out):  # never overwrite an earlier grab
+                out = f"{stem}_frame_{seconds:g}s_{n}.png"
+                n += 1
+            try:
+                with open(out, "wb") as f:
+                    f.write(png)
+            except OSError as e:
+                say(f"Could not save the frame: {e}")
+                return
+            say(f"Frame saved · {os.path.basename(out)}")
+        threading.Thread(target=work, daemon=True).start()
 
     def _context_menu(self, job, event):
         self._select_job(job)

@@ -17,7 +17,7 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 
 import theme
-from models import parse_time
+from models import is_audio, parse_time
 from probe import extract_frame_png
 from widgets import RangeSlider
 
@@ -70,43 +70,28 @@ class EditsMixin:
         ctk.CTkLabel(row, text=f"s or mm:ss · video is {dur:.1f}s",
                      text_color=theme.TEXT_MUTED).pack(side="left", padx=(8, 0))
 
-        state = {"token": 0, "images": {}}
-
         def set_entries(lo, hi):
             start_e.delete(0, "end")
             start_e.insert(0, f"{lo:.1f}")
             end_e.delete(0, "end")
             end_e.insert(0, f"{hi:.1f}")
 
-        def apply_preview(tok, label, png):
-            if tok != state["token"] or not dlg.winfo_exists() or not png:
-                return
-            try:
-                img = Image.open(io.BytesIO(png))
-                scale = min(200 / img.width, 112 / img.height)
-                size = (max(int(img.width * scale), 1),
-                        max(int(img.height * scale), 1))
-                state["images"][label] = ctk.CTkImage(light_image=img,
-                                                      dark_image=img, size=size)
-                label.configure(image=state["images"][label], text="")
-            except Exception:  # noqa: BLE001 - previews are best-effort
-                pass
-
         def refresh_previews():
-            from models import is_audio
             if is_audio(job.path):
                 return  # nothing to show for a sound file
-            state["token"] += 1
-            tok = state["token"]
             lo, hi = slider.values()
+            # The shared thumbnail pipeline: frames are grabbed off the UI
+            # thread and land through msg_queue, and its per-label tokens
+            # drop a stale frame when the slider has moved on.
+            self._request_thumb(job.path, lo, start_prev)
+            self._request_thumb(job.path, max(hi - 0.05, 0), end_prev)
 
-            def work():
-                p1 = extract_frame_png(job.path, lo, max_width=320)
-                p2 = extract_frame_png(job.path, max(hi - 0.05, 0), max_width=320)
-                if dlg.winfo_exists():
-                    dlg.after(0, lambda: (apply_preview(tok, start_prev, p1),
-                                          apply_preview(tok, end_prev, p2)))
-            threading.Thread(target=work, daemon=True).start()
+        def forget_previews(e):
+            if str(e.widget) == str(dlg):  # a late frame must find no target
+                for label in (start_prev, end_prev):
+                    self._thumb_tokens.pop(label, None)
+                    self._thumb_images.pop(label, None)
+        dlg.bind("<Destroy>", forget_previews, add="+")
 
         debounce = {"after": None}
 
@@ -170,11 +155,24 @@ class EditsMixin:
             self.status.configure(text="This file has no picture to crop.")
             return
         dur = info.duration or 0
-        png = extract_frame_png(job.path, dur * 0.25 if dur > 1 else 0,
-                                max_width=720)
+        self.status.configure(text="Reading a frame to crop…")
+
+        def work():
+            # Seeking into a long 4K file can take seconds: never on the UI
+            # thread. The dialog opens from the message pump once it's ready.
+            png = extract_frame_png(job.path, dur * 0.25 if dur > 1 else 0,
+                                    max_width=720)
+            self.msg_queue.put(("ui", self._show_crop_dialog, job, png))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_crop_dialog(self, job, png):
+        info = job.info
         if not png:
             self.status.configure(text="Could not read a frame from this file.")
             return
+        if job not in self.jobs:
+            return  # removed while the frame was being read
+        self.status.configure(text="Drag a box over the part to keep.")
         src = Image.open(io.BytesIO(png))
         # The preview frame may already be scaled down; map through BOTH the
         # preview scale and the display scale back to source pixels.

@@ -178,6 +178,44 @@ def test_unique_path_case_insensitive_on_windows():
     assert unique_path(r"C:\out\a_h265.mp4", used).endswith("_2.mp4")
 
 
+@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows path rules")
+def test_same_path_is_case_insensitive_like_windows():
+    from models import same_path
+    assert same_path(r"C:\Photos\IMG_0001.JPG", r"c:\photos\IMG_0001.jpg")
+    assert not same_path(r"C:\Photos\a.jpg", r"C:\Photos\b.jpg")
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows path rules")
+def test_unique_path_steers_around_seeded_sources():
+    """Regression: IMG_0001.JPG converted to JPEG was planned onto itself
+    and overwritten. With the queued sources seeded into the claimed set, no
+    output can take a source's path, whatever the letter case."""
+    from models import norm_path
+    used = {norm_path(r"C:\Photos\IMG_0001.JPG")}
+    assert unique_path(r"C:\Photos\IMG_0001.jpg", used) == r"C:\Photos\IMG_0001_2.jpg"
+
+
+@pytest.mark.parametrize("raw,needle", [
+    (["[Parsed_subtitles_0 @ 0000] Unable to open C:/x/nope.srt"], "subtitle file"),
+    (["[Parsed_crop_0 @ 0000] Invalid too big or non positive size for width "
+      "'9999' or height '9999'", "Error reinitializing filters!",
+      "Conversion failed!"], "crop does not fit"),
+])
+def test_friendly_error_input_side_failures(raw, needle):
+    """Regression: a missing subtitle file said "Could not save the file"."""
+    from models import friendly_error
+    assert needle in friendly_error(raw)
+
+
+def test_friendly_error_fallback_skips_ffmpeg_wrap_up_lines():
+    from models import friendly_error
+    tail = ["out_time=00:00:01.000000", "progress=continue",
+            "[vost#0:0/libx265 @ 0000] Something unusual broke",
+            "[out#0/mp4 @ 0000] Nothing was written into output file",
+            "Conversion failed!"]
+    assert friendly_error(tail) == "Something unusual broke"
+
+
 def test_status_display_savings_and_over_limit():
     info = VideoInfo("clip.mp4", 1920, 1080, 60, 30, "h264", "aac", 5_000_000, 100)
     done = _job("done", info=info, out_size=35, outputs=["a.mp4"])

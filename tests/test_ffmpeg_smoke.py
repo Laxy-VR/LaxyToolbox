@@ -52,9 +52,11 @@ def test_probe_reads_generated_clip(clip):
 
 def test_detect_crop_finds_letterbox(tmp_path):
     """A clip with real black bars top and bottom must come back with the
-    active area, and a bar-free clip must not produce a crop."""
+    active area, and a bar-free clip must not produce a crop. The CJK name is
+    a regression: its UTF-8 bytes broke cp1252 decoding of ffmpeg's log, and
+    detection silently found nothing."""
     from probe import detect_crop
-    boxed = str(tmp_path / "boxed.mp4")
+    boxed = str(tmp_path / "boxed_東京.mp4")
     cmd = [FFMPEG, "-y",
            "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=2",
            "-vf", "pad=320:240:0:30",  # 30 px bars top and bottom
@@ -164,6 +166,45 @@ def test_boomerang_speed_gif_end_to_end(clip):
                                       "gif_colors": 64}, segment=(0, 1)))
     assert os.path.getsize(out) > 0
     assert probe_video(out).duration == pytest.approx(1.0, abs=0.25)
+
+
+def test_x265_two_pass_leaves_nothing_in_cwd(clip, tmp_path, monkeypatch):
+    """Regression: x265 ignored -passlogfile and dropped x265_2pass.log (plus
+    .cutree) into the working directory; stats must go to the passlog."""
+    from encoder import cleanup_passlogs
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    passlog = str(logs / "vc_pass")
+    out = str(tmp_path / "two_pass.mp4")
+    _run(build_stages(clip, out, _settings(video_bitrate=300, audio_mode="aac"),
+                      "target", passlog=passlog))
+    assert os.listdir(cwd) == []
+    assert os.listdir(logs)  # the stats landed at the prefix...
+    cleanup_passlogs(passlog)
+    assert os.listdir(logs) == []  # ...and get swept
+
+
+def test_rotated_video_reports_decoded_shape(clip, tmp_path):
+    """Phones store portrait video as landscape plus a rotation flag. The
+    probe must report the decoded shape, or a crop drawn on the preview frame
+    doesn't fit the picture ffmpeg actually crops."""
+    import io
+    from PIL import Image
+    from probe import extract_frame_png
+    rotated = str(tmp_path / "portrait.mp4")
+    subprocess.run([FFMPEG, "-y", "-display_rotation", "90", "-i", clip,
+                    "-c", "copy", rotated], capture_output=True, check=True)
+    info = probe_video(rotated)
+    frame = Image.open(io.BytesIO(extract_frame_png(rotated, 0.2, max_width=None)))
+    assert (info.width, info.height) == frame.size == (240, 320)
+    out = str(tmp_path / "portrait_crop.mp4")
+    crop = f"crop={info.width}:{info.height // 2}:0:0"  # top half, decoded axes
+    _run(build_stages(rotated, out, _settings(crop_filter=crop), "quality"))
+    cropped = probe_video(out)
+    assert (cropped.width, cropped.height) == (240, 160)
 
 
 def test_rotate_and_subtitles_end_to_end(clip):

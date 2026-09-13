@@ -160,6 +160,143 @@ def test_downloaded_status_shows_resolution():
     assert status_display(j)[0] == "downloaded ✓ · 360p"
 
 
+# ---------- verified yt-dlp fetch ----------
+class _FakeResponse:
+    def __init__(self, body, length=None):
+        self._body = body
+        self.headers = {"Content-Length": str(len(body) if length is None else length)}
+
+    def read(self, n=-1):
+        if n is None or n < 0:
+            n = len(self._body)
+        chunk, self._body = self._body[:n], self._body[n:]
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+
+def _serve_release(monkeypatch, tmp_path, exe_body, sums_hash=None, exe_length=None):
+    import hashlib
+    import downloader as dl
+    monkeypatch.setattr(dl, "APPDATA_DIR", str(tmp_path))
+    monkeypatch.setattr(dl, "YTDLP_PATH", str(tmp_path / "yt-dlp.exe"))
+    digest = sums_hash or hashlib.sha256(exe_body).hexdigest()
+    sums = f"{'0' * 64}  yt-dlp_linux\n{digest}  yt-dlp.exe\n".encode()
+
+    def urlopen(url, timeout=None):
+        if url == dl.YTDLP_SUMS_URL:
+            return _FakeResponse(sums)
+        return _FakeResponse(exe_body, exe_length)
+    monkeypatch.setattr(dl.urllib.request, "urlopen", urlopen)
+    return dl
+
+
+def test_fetch_ytdlp_keeps_a_verified_download(monkeypatch, tmp_path):
+    dl = _serve_release(monkeypatch, tmp_path, b"MZ real exe")
+    dl.fetch_ytdlp()
+    assert (tmp_path / "yt-dlp.exe").read_bytes() == b"MZ real exe"
+
+
+def test_fetch_ytdlp_rejects_a_truncated_download(monkeypatch, tmp_path):
+    """Regression: a cut off download was kept as yt-dlp.exe, and since
+    has_ytdlp only checks existence, every later download failed with it."""
+    dl = _serve_release(monkeypatch, tmp_path, b"MZ partial", exe_length=100000)
+    with pytest.raises(RuntimeError, match="cut off"):
+        dl.fetch_ytdlp()
+    assert not dl.has_ytdlp() and not list(tmp_path.iterdir())
+
+
+def test_fetch_ytdlp_rejects_a_checksum_mismatch(monkeypatch, tmp_path):
+    dl = _serve_release(monkeypatch, tmp_path, b"MZ tampered", sums_hash="ab" * 32)
+    with pytest.raises(RuntimeError, match="checksum"):
+        dl.fetch_ytdlp()
+    assert not dl.has_ytdlp()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows exe loading")
+def test_download_reports_and_removes_a_damaged_exe(monkeypatch, tmp_path):
+    import threading
+    import downloader as dl
+    bad = tmp_path / "yt-dlp.exe"
+    bad.write_bytes(b"MZ" + b"\0" * 998)
+    monkeypatch.setattr(dl, "YTDLP_PATH", str(bad))
+    monkeypatch.setattr(dl, "DL_LOG_PATH", str(tmp_path / "log.txt"))
+    out = tmp_path / "out"
+    paths, err = dl.download("https://u", str(out), lambda f: None, threading.Event())
+    assert (paths, err) == ([], dl.DAMAGED)
+    assert not bad.exists()
+    assert os.listdir(out) == []  # the staging folder is gone too
+
+
+def test_damaged_ytdlp_is_refetched_not_self_updated(monkeypatch, tmp_path):
+    """A broken exe can't run -U, so the retry must fetch a fresh copy."""
+    import threading
+    import downloader as dl
+    calls = []
+    results = iter([([], dl.DAMAGED), (["C:/out/clip.mp4"], None)])
+    monkeypatch.setattr(dl, "download", lambda *a, **k: next(results))
+    monkeypatch.setattr(dl, "fetch_ytdlp", lambda: calls.append("fetch"))
+    monkeypatch.setattr(dl, "update_ytdlp", lambda: calls.append("update"))
+    paths, err = dl.download_with_update_retry("https://u", str(tmp_path),
+                                               lambda f: None, threading.Event())
+    assert calls == ["fetch"] and paths == ["C:/out/clip.mp4"] and err is None
+
+
+# ---------- staging folder + cancel (a fake yt-dlp in Python) ----------
+def _fake_ytdlp(monkeypatch, tmp_path, script):
+    import sys
+    import downloader as dl
+
+    def command(url, template, *a, **k):
+        return [sys.executable, "-c", script, os.path.dirname(template)]
+    monkeypatch.setattr(dl, "build_dl_command", command)
+    monkeypatch.setattr(dl, "DL_LOG_PATH", str(tmp_path / "log.txt"))
+    return dl
+
+
+def test_download_never_adopts_unrelated_files(monkeypatch, tmp_path):
+    """Regression: the sweep for mangled (non-ASCII) paths claimed ANY media
+    file that changed in the output folder, e.g. a browser download."""
+    import threading
+    out = tmp_path / "Downloads"
+    out.mkdir()
+    (out / "browser_download.mp4").write_bytes(b"not ours")
+    script = ("import os, sys\n"
+              "p = os.path.join(sys.argv[1], 'clip_\\uac15.mp4')\n"
+              "open(p, 'wb').write(b'video')\n"
+              "print('C:/mangled/clip_?.mp4')\n")  # what the frozen exe prints
+    dl = _fake_ytdlp(monkeypatch, tmp_path, script)
+    paths, err = dl.download("https://u", str(out), lambda f: None, threading.Event())
+    assert err is None
+    assert paths == [str(out / "clip_강.mp4")]
+    assert sorted(os.listdir(out)) == ["browser_download.mp4", "clip_강.mp4"]
+
+
+def test_cancel_stops_a_silent_download_and_removes_partials(monkeypatch, tmp_path):
+    """Regression: cancel was only noticed when yt-dlp printed a line, so a
+    long silent merge ignored it; partial files were left behind too."""
+    import threading
+    out = tmp_path / "Downloads"
+    out.mkdir()
+    script = ("import os, sys, time\n"
+              "open(os.path.join(sys.argv[1], 'clip.mp4.part'), 'wb').write(b'half')\n"
+              "print('[download]  10.0% of 5MiB', flush=True)\n"
+              "time.sleep(60)\n")  # silent from here on, like a long merge
+    dl = _fake_ytdlp(monkeypatch, tmp_path, script)
+    cancel = threading.Event()
+    started = time.time()
+    paths, err = dl.download("https://u", str(out),
+                             lambda _f: threading.Timer(0.5, cancel.set).start(),
+                             cancel)
+    assert (paths, err) == ([], "cancelled")
+    assert time.time() - started < 20
+    assert os.listdir(out) == []
+
+
 def test_newest_media_file_none_when_nothing_new(tmp_path):
     old = tmp_path / "old.mp4"
     old.write_bytes(b"x")

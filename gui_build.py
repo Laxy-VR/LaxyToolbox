@@ -587,7 +587,7 @@ class BuildMixin:
         out.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(out, text="Save to").grid(row=0, column=0, padx=(0, 8))
         self.outdir_entry = ctk.CTkEntry(
-            out, placeholder_text="Same folder as each source (files get “_h265”)")
+            out, placeholder_text="Same folder as each source (files get a suffix)")
         self.outdir_entry.grid(row=0, column=1, sticky="ew")
         # keep the Download tab's note in sync while the user edits the folder
         self.outdir_entry.bind("<KeyRelease>", lambda _e: self._update_note())

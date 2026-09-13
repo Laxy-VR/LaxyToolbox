@@ -34,7 +34,7 @@ from gui_queue import QueueMixin
 from gui_run import RunMixin
 from gui_settings import SettingsMixin
 from models import APP_NAME, CONFIG_PATH, GITHUB_REPO, Job  # noqa: F401 - Job hints self.jobs
-from sysutil import resource_path, terminate_children
+from sysutil import log_error, resource_path, terminate_children
 
 _AppBase = (ctk.CTk, TkinterDnD.DnDWrapper) if _DND_AVAILABLE else (ctk.CTk,)
 
@@ -115,6 +115,11 @@ class App(BuildMixin, QueueMixin, EditsMixin, DownloadsMixin, NotesMixin,
             threading.Thread(target=self._gpu_probe_worker, daemon=True).start()
         self.after(100, self._poll_queue)
 
+    def report_callback_exception(self, exc, val, tb):
+        """Tk's hook for an exception in any widget callback. The windowed
+        exe has no console to print it to, so keep it in errors.log."""
+        log_error("tk callback", (exc, val, tb))
+
     def _on_close(self):
         self.cancel_event.set()  # stop the encode loop scheduling more work
         self._sample_cancel.set()  # and any 5s sample encode
@@ -186,7 +191,9 @@ if __name__ == "__main__":
     _accent = "Purple"
     try:  # the saved accent must be known before any widget takes its colors
         with open(CONFIG_PATH, encoding="utf-8") as _f:
-            _accent = json.load(_f).get("accent", "Purple")
+            _cfg = json.load(_f)
+        if isinstance(_cfg, dict):  # hand-edited junk must not stop startup
+            _accent = _cfg.get("accent", "Purple")
     except (OSError, ValueError):
         pass
     theme.apply_theme(_accent)

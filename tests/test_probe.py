@@ -104,6 +104,47 @@ def test_interlace_detection():
     assert not make().is_interlaced  # unknown field order: leave it alone
 
 
+def _fake_ffprobe(monkeypatch, video_extra):
+    import json
+    import subprocess
+    import probe
+    stream = {"codec_type": "video", "codec_name": "hevc", "width": 1920,
+              "height": 1080, "r_frame_rate": "30/1", **video_extra}
+    payload = json.dumps({"format": {"duration": "2.0", "size": "100"},
+                          "streams": [stream]})
+    monkeypatch.setattr(probe.subprocess, "run", lambda *a, **k:
+                        subprocess.CompletedProcess(a, 0, payload, ""))
+
+
+@pytest.mark.parametrize("extra,dims", [
+    ({"side_data_list": [{"side_data_type": "Display Matrix", "rotation": -90}]},
+     (1080, 1920)),
+    ({"side_data_list": [{"side_data_type": "Mastering display metadata"},
+                         {"rotation": 90}]}, (1080, 1920)),
+    ({"side_data_list": [{"rotation": 180}]}, (1920, 1080)),
+    ({"tags": {"rotate": "270"}}, (1080, 1920)),
+    ({}, (1920, 1080)),
+])
+def test_probe_reports_the_decoded_orientation(monkeypatch, extra, dims):
+    """Regression: iPhone portrait clips are 1920x1080 plus a rotation flag;
+    reporting the raw axes broke the crop box and every size estimate."""
+    import probe
+    _fake_ffprobe(monkeypatch, extra)
+    info = probe.probe_video("phone.mov")
+    assert (info.width, info.height) == dims
+
+
+def test_probe_timeout_is_a_readable_error(monkeypatch):
+    import subprocess
+    import probe
+
+    def hang(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+    monkeypatch.setattr(probe.subprocess, "run", hang)
+    with pytest.raises(RuntimeError, match="took too long"):
+        probe.probe_video("x.mp4")
+
+
 def test_gpu_vendors_reads_encoder_list(monkeypatch):
     import probe
     monkeypatch.setattr(probe, "_encoders_list",

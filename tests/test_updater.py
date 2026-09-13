@@ -70,6 +70,35 @@ def test_download_cancel(tmp_path):
     assert not (tmp_path / "out.bin").exists()
 
 
+class _TruncatedResponse:
+    """A response whose connection drops after 1000 of 100000 bytes."""
+    headers = {"Content-Length": "100000"}
+
+    def __init__(self):
+        self._chunks = [b"MZ" + b"\0" * 998]
+
+    def read(self, _n=-1):
+        return self._chunks.pop() if self._chunks else b""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+
+def test_download_rejects_truncated_body(tmp_path, monkeypatch):
+    """Regression: a dropped connection just ends the stream early; with no
+    digest to compare, the partial exe was accepted and would be installed."""
+    import updater
+    monkeypatch.setattr(updater.urllib.request, "urlopen",
+                        lambda *a, **k: _TruncatedResponse())
+    dest = tmp_path / "app.exe.new"
+    err = download("https://example/app.exe", str(dest), sha256=None)
+    assert err and "incomplete" in err
+    assert not dest.exists() and not (tmp_path / "app.exe.new.part").exists()
+
+
 # ---------- apply (the rename swap) ----------
 def test_apply_swaps_and_keeps_old(tmp_path):
     current = tmp_path / "app.exe"

@@ -6,6 +6,8 @@ the core state App.__init__ owns (_user_presets, _gpu_ok, _advanced_open);
 _load_config must run after _build_ui so every widget it restores exists."""
 
 import json
+import os
+import re
 import tkinter as tk
 
 import customtkinter as ctk
@@ -15,6 +17,7 @@ from models import (APP_NAME, APP_VERSION, CONFIG_PATH, GITHUB_REPO,
                     TAB_COMPRESS, TAB_GIF, TAB_IMAGE, TAB_AUDIO,
                     TAB_DOWNLOAD, MODE_QUALITY, MODE_TARGET, MODE_SPLIT,
                     BUILTIN_PRESETS, PRESET_PLACEHOLDER)
+from sysutil import point_on_screen
 
 
 class ConfigMixin:
@@ -27,6 +30,8 @@ class ConfigMixin:
             with open(CONFIG_PATH, encoding="utf-8") as f:
                 cfg = json.load(f)
         except (OSError, ValueError):
+            return
+        if not isinstance(cfg, dict):
             return
 
         def set_menu(menu, key):
@@ -93,8 +98,14 @@ class ConfigMixin:
         if cfg.get("outdir"):
             self.outdir_entry.insert(0, cfg["outdir"])
         if cfg.get("geometry"):  # restore last window size/position (minsize clamps it)
+            geometry = str(cfg["geometry"])
+            m = re.match(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$", geometry)
+            if m and not point_on_screen(int(m.group(3)) + 60, int(m.group(4)) + 15):
+                # Saved on a monitor that is gone: keep the size, let Windows
+                # place the window where it can actually be seen.
+                geometry = f"{m.group(1)}x{m.group(2)}"
             try:
-                self.geometry(cfg["geometry"])
+                self.geometry(geometry)
             except tk.TclError:
                 pass
         if isinstance(cfg.get("presets"), dict):
@@ -157,9 +168,14 @@ class ConfigMixin:
             cfg["hardware"] = self.hw_menu.get()
         if self._user_presets:
             cfg["presets"] = self._user_presets
+        # Write a sibling file, then swap it in: a crash or power cut mid
+        # write must never leave a half file that wipes every setting and
+        # saved preset on the next launch.
+        tmp = CONFIG_PATH + ".tmp"
         try:
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, indent=2)
+            os.replace(tmp, CONFIG_PATH)
         except OSError:
             pass
 

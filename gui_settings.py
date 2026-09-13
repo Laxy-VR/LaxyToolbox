@@ -375,7 +375,10 @@ class SettingsMixin:
         self.track_menu.configure(state="disabled" if cut else "normal")
         self.speed_menu.configure(state="disabled" if cut else "normal")
         self.sample_btn.configure(state="disabled" if cut else "normal")
-        self.mode_seg.configure(state="disabled" if cut else "normal")
+        # A run locks the mode; this runs mid batch too (a codec change, a
+        # probe revealing a multi-track file) and must not unlock it.
+        running = self.start_btn.cget("state") == "disabled"
+        self.mode_seg.configure(state="disabled" if (cut or running) else "normal")
 
     def _apply_recommended(self, rec):
         self.crf_slider.set(rec["crf"])

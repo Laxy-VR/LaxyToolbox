@@ -22,10 +22,10 @@ from models import (APP_NAME, APP_VERSION, GITHUB_REPO, MODE_QUALITY,
                     MODE_DOWNLOAD, PARTS_OPTIONS, GIF_FORMAT_OPTIONS,
                     GIF_OUT_EXT, IMG_FORMAT_OPTIONS, AUD_FORMAT_OPTIONS,
                     Job, SPEED_OPTIONS, unique_path, friendly_error, human_size,
-                    is_image, is_audio, parse_time)
+                    is_image, is_audio, parse_time, norm_path, same_path)
 from planner import plan_job, plan_image_attempts, trimmed_duration
 from probe import gpu_works, recommend_settings
-from sysutil import (set_keep_awake, flash_taskbar, latest_release,
+from sysutil import (set_keep_awake, flash_taskbar, log_error,
                      is_newer_version, set_taskbar_progress)
 
 
@@ -116,7 +116,10 @@ class RunMixin:
             # The image size cap re-uses the over-limit machinery, so a file
             # that couldn't be squeezed under the cap gets flagged.
             limit_mb = settings["img_max_kb"] / 1024
-        claimed = set()  # output paths already taken by earlier jobs this batch
+        # Paths no output may take: every queued source (so one job can never
+        # write over a file another job still has to read, e.g. clip.mp4 next
+        # to an earlier clip_h265.mp4), then each output as it is planned.
+        claimed = {norm_path(j.path) for j in self.jobs if j.info is not None}
         planned = {}  # job id -> outputs, computed before anything is mutated
         for job in jobs:  # all widget access happens here on the main thread
             planned[job.id] = [unique_path(o, claimed)
@@ -161,10 +164,13 @@ class RunMixin:
         """Output file path(s) for a job (one, or several parts when splitting)."""
         folder = self.outdir_entry.get().strip() or os.path.dirname(job.path)
         stem = os.path.splitext(os.path.basename(job.path))[0]
+        # Same-format conversions would land on the source itself. Compare
+        # the way Windows does (case-insensitive): IMG_0001.JPG converted to
+        # JPEG must not be "IMG_0001.jpg", which IS the original.
         if mode == MODE_IMAGE:
             ext = IMG_EXT[dict(IMG_FORMAT_OPTIONS)[self.img_format_menu.get()]]
             out = os.path.join(folder, f"{stem}{ext}")
-            if os.path.abspath(out) == os.path.abspath(job.path):  # same format in
+            if same_path(out, job.path):  # same format in
                 out = os.path.join(folder, f"{stem}_laxy{ext}")
             return [out]
         if mode == MODE_AUDIO:
@@ -174,61 +180,76 @@ class RunMixin:
             ext = audio_copy_ext(job.info.audio_codec) if fmt == "copy" \
                 else AUD_ENCODERS[fmt][1]
             out = os.path.join(folder, f"{stem}{ext}")
-            if os.path.abspath(out) == os.path.abspath(job.path):  # same format in
+            if same_path(out, job.path):  # same format in
                 out = os.path.join(folder, f"{stem}_laxy{ext}")
             return [out]
         if mode == MODE_GIF:
             fmt = dict(GIF_FORMAT_OPTIONS)[self.gif_format_menu.get()]
             ext = GIF_OUT_EXT[fmt]  # .gif / .webp / _loop.mp4
             out = os.path.join(folder, f"{stem}{ext}")
-            if os.path.abspath(out) == os.path.abspath(job.path):  # gif -> gif
+            if same_path(out, job.path):  # gif -> gif
                 out = os.path.join(folder, f"{stem}_laxy{ext}")
             return [out]
         if self._cut_only():  # stream copy must stay in the source container
             src_ext = os.path.splitext(job.path)[1] or ".mp4"
             return [os.path.join(folder, f"{stem}_cut{src_ext}")]
+        codec = self._codec_value()  # the suffix names what's inside: _h265/_av1/_h264
         if mode != MODE_SPLIT:
-            return [os.path.join(folder, f"{stem}_h265.mp4")]
+            return [os.path.join(folder, f"{stem}_{codec}.mp4")]
         w, h, fps = self._effective_res_fps(job.info)
         # Match plan_job: a per-file trim wins, and a speed change shrinks
         # the output timeline the parts must cover.
         dur = trimmed_duration(job.info.duration, job.trim or trim)
         spd = dict(SPEED_OPTIONS)[self.speed_menu.get()] or 1.0
         n = parts_choice or suggest_parts(dur / spd, size_mb, w, h, fps)
-        return [os.path.join(folder, f"{stem}_part{i + 1}_h265.mp4") for i in range(n)]
+        return [os.path.join(folder, f"{stem}_part{i + 1}_{codec}.mp4") for i in range(n)]
 
     def _encode_worker(self, jobs, mode, base_settings, size_mb):
         total = len(jobs)
         cancelled = False
-        for idx, job in enumerate(jobs):
-            if self.cancel_event.is_set():
-                cancelled = True
-                break
-            self.msg_queue.put(("job_status", job.id, "encoding"))
+        try:
+            for idx, job in enumerate(jobs):
+                if self.cancel_event.is_set():
+                    cancelled = True
+                    break
+                self.msg_queue.put(("job_status", job.id, "encoding"))
+                result, tail = self._encode_one(job, mode, base_settings,
+                                                size_mb, idx, total)
+                self.msg_queue.put(("job_done", job.id, result, tail))
+                self.msg_queue.put(("overall", (idx + 1) / total))
+                if result == "cancelled":
+                    cancelled = True
+                    break
+        finally:
+            # Always, even if something above blew up: without all_done the
+            # window stays locked in "running" until the app is restarted.
+            if cancelled:  # mark anything not yet finished
+                for job in jobs:
+                    self.msg_queue.put(("mark_cancelled", job.id))
+            self.msg_queue.put(("all_done", cancelled))
+
+    def _encode_one(self, job, mode, base_settings, size_mb, idx, total):
+        """Plan and run one job; (result, tail). An unexpected error fails
+        just this file (and lands in errors.log) instead of the whole batch."""
+        passlogs = []
+        try:
             if mode == MODE_IMAGE and base_settings.get("img_max_kb"):
                 result, tail, passlogs = self._run_image_capped(
                     job, base_settings, idx, total)
             else:
                 stages, passlogs, reason = plan_job(job, mode, base_settings, size_mb)
                 if stages is None:
-                    self.msg_queue.put(("job_done", job.id, "failed", [reason]))
-                    self.msg_queue.put(("overall", (idx + 1) / total))
-                    continue
+                    return "failed", [reason]  # nothing ran, nothing to clean
                 result, tail = self._run_stages(job, stages, idx, total)
+        except Exception as e:  # noqa: BLE001 - one bad file must not wedge the run
+            log_error(f"encoding {job.path}")
+            result, tail = "failed", [str(e)]
+        finally:
             for passlog in passlogs:
                 cleanup_passlogs(passlog)
-            if result in ("failed", "cancelled"):
-                self._cleanup_outputs(job)  # never leave a broken/partial file
-            self.msg_queue.put(("job_done", job.id, result, tail))
-            self.msg_queue.put(("overall", (idx + 1) / total))
-            if result == "cancelled":
-                cancelled = True
-                break
-
-        if cancelled:  # mark anything not yet finished
-            for job in jobs:
-                self.msg_queue.put(("mark_cancelled", job.id))
-        self.msg_queue.put(("all_done", cancelled))
+        if result in ("failed", "cancelled"):
+            self._cleanup_outputs(job)  # never leave a broken/partial file
+        return result, tail
 
     def _run_image_capped(self, job, settings, idx, total):
         """Encode an image under a hard size cap: walk the quality ladder,
@@ -293,15 +314,25 @@ class RunMixin:
     def _poll_queue(self):
         try:
             while True:
-                msg = self.msg_queue.get_nowait()
-                self._dispatch(msg)
-        except queue.Empty:
-            pass
-        self.after(100, self._poll_queue)
+                try:
+                    msg = self.msg_queue.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    self._dispatch(msg)
+                except Exception:  # noqa: BLE001 - one bad message must not stop the pump
+                    log_error(f"dispatching {msg[0]!r}")
+        finally:
+            # Rescheduled no matter what: if the pump stopped, every later
+            # progress update, finished job, and all_done would be lost and
+            # the window would sit there looking frozen.
+            self.after(100, self._poll_queue)
 
     def _dispatch(self, msg):
         kind = msg[0]
-        if kind == "probed":
+        if kind == "ui":  # a worker asking for a call on the main thread
+            msg[1](*msg[2:])
+        elif kind == "probed":
             self._on_probed(msg[1], msg[2], msg[3])
         elif kind == "job_status":
             self._set_status(msg[1], msg[2])
@@ -518,7 +549,12 @@ class RunMixin:
                          args=(sample, settings), daemon=True).start()
 
     def _sample_worker(self, sample, settings):
-        stages, _passlogs, reason = plan_job(sample, MODE_QUALITY, settings, None)
+        try:
+            stages, _passlogs, reason = plan_job(sample, MODE_QUALITY, settings, None)
+        except Exception as e:  # noqa: BLE001 - else the sample button stays stuck
+            log_error(f"planning a sample of {sample.path}")
+            self.msg_queue.put(("sample_done", None, str(e)))
+            return
         if stages is None:
             self.msg_queue.put(("sample_done", None, reason))
             return
@@ -550,7 +586,13 @@ class RunMixin:
 
     # ---------- app update check ----------
     def _update_check_worker(self):
-        tag, url = latest_release(GITHUB_REPO)
+        # Same lookup the install uses, so a release only counts as an update
+        # once its exe is actually attached (a just-published release whose
+        # build is still running would otherwise offer a broken update).
+        asset = updater.latest_asset(GITHUB_REPO)
+        if asset is None:
+            return
+        tag, url = asset[0], asset[1]
         if tag and url and is_newer_version(tag, APP_VERSION):
             self.msg_queue.put(("update", tag, url))
 

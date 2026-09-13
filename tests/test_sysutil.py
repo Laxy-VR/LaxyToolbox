@@ -51,6 +51,48 @@ def test_relaunch_env_scrubs_pyinstaller_state(monkeypatch):
     assert env["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
 
 
+def _alive(pid):
+    import ctypes
+    k32 = ctypes.windll.kernel32
+    handle = k32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    code = ctypes.c_ulong()
+    k32.GetExitCodeProcess(handle, ctypes.byref(code))
+    k32.CloseHandle(handle)
+    return code.value == 259  # STILL_ACTIVE
+
+
+def test_kill_tree_stops_grandchildren():
+    """Regression: yt-dlp.exe is a PyInstaller onefile launcher, so a plain
+    terminate() killed the launcher and left the real downloader running."""
+    import pytest
+    if sys.platform != "win32":
+        pytest.skip("Windows process trees")
+    from sysutil import kill_tree
+    script = ("import subprocess, sys, time\n"
+              "c = subprocess.Popen([sys.executable, '-c', "
+              "'import time; time.sleep(60)'])\n"
+              "print(c.pid, flush=True)\n"
+              "time.sleep(60)\n")
+    parent = subprocess.Popen([sys.executable, "-c", script],
+                              stdout=subprocess.PIPE, text=True)
+    grandchild = int(parent.stdout.readline())
+    try:
+        assert _alive(grandchild)
+        kill_tree(parent)
+        parent.wait(timeout=10)
+        for _ in range(50):
+            if not _alive(grandchild):
+                break
+            time.sleep(0.1)
+        assert not _alive(grandchild)
+    finally:
+        if _alive(grandchild):
+            subprocess.run(["taskkill", "/F", "/PID", str(grandchild)],
+                           capture_output=True)
+
+
 def test_terminate_children_tolerates_already_dead():
     proc = _sleeper()
     proc.kill()
