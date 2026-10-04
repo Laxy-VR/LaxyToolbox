@@ -5,3 +5,6 @@ build/
 dist/
 *.spec
 x265_2pass.log*
+build-linux/
+.venv/
+selftest.json

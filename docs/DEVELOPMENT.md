@@ -36,6 +36,33 @@ pip install pyinstaller==6.21.0
 `pytest` needs no display. The smoke tests skip themselves when ffmpeg is not
 on PATH (and the lossy GIF test when gifsicle is not).
 
+### On Linux
+
+`build.sh` is the Linux counterpart of `build.ps1`, and the single source of
+the Linux tool pins: it downloads BtbN's static ffmpeg 7.1.5 (same 7.1 branch
+as Windows), builds gifsicle 1.95 from source, and fetches appimagetool and
+the AppImage runtime, each checked against a SHA256 in the script.
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt pytest==9.1.1 ruff==0.15.22
+python app.py                                  # run from source
+
+./build.sh --tools-only                        # pinned ffmpeg/ffprobe/gifsicle
+PATH="$PWD/build-linux/tools:$PATH" pytest -q  # smoke tests against them
+
+pip install pyinstaller==6.21.0
+./build.sh                                     # dist/Laxy.Toolbox-x86_64.AppImage
+dist/Laxy.Toolbox-x86_64.AppImage --selftest out.json
+```
+
+Distro ffmpeg packages are often stripped down (Fedora's `ffmpeg-free` has
+no x264/x265), so run the smoke tests against `build-linux/tools`, as CI
+does. A local AppImage needs at least your distro's glibc; release builds
+come from CI's Ubuntu 22.04 so they run on older systems too.
+
+### Bundling on Windows
+
 `build.ps1` bundles whichever ffmpeg, ffprobe, and gifsicle it finds on PATH,
 and fails without them. PyInstaller also bundles any importable package it
 notices in your Python (numpy, for example), so local exes come out about
@@ -62,7 +89,7 @@ is the one that ships.
 | `downloader.py` | yt-dlp: verified fetch and self update, the download command, progress parsing, the staging folder download, locating finished files. |
 | `updater.py` | In app updating: release asset lookup with GitHub's sha256 digest, a verified download, and the rename swap that replaces the running exe. Pure functions returning error strings. |
 | `widgets.py` | `QueueRow` (one draggable queue item), `Tooltip` (static or live text), and `RangeSlider` (the two handle Canvas slider). |
-| `sysutil.py` | Windows helpers: keep awake, taskbar flash and progress (ITaskbarList3 via ctypes), the clipboard, resource paths, relaunch, version comparison, the child process registry and `kill_tree`, `point_on_screen`, and `log_error`. |
+| `sysutil.py` | Platform helpers: keep awake (SetThreadExecutionState / systemd-inhibit), taskbar flash and progress (Windows, ITaskbarList3 via ctypes), the clipboard (CF_HDROP / text/uri-list via wl-copy or xclip), opening and revealing files (Explorer / xdg-open and the FileManager1 D-Bus call), resource paths, relaunch, `restore_system_env`, version comparison, the child process registry and `kill_tree` (taskkill /T or the process group), `point_on_screen`, and `log_error`. |
 | `theme.py` | Accent palettes (`ACCENTS`), private font loading, the CustomTkinter theme override. `apply_theme(accent)` also rotates every neutral's hue toward the accent. |
 
 ### The shape at a glance
@@ -155,11 +182,11 @@ file (`models.is_image` / `is_audio`).
 
 | What | Where | Owner |
 |---|---|---|
-| Settings, window geometry, presets, GPU verdicts (`gpu_ok`) | `~/.laxy_compressor.json` | `gui_config` (written to a temp file, then `os.replace`) |
-| `yt-dlp.exe`, `last_download.log`, `errors.log` | `%LOCALAPPDATA%\LaxyCompressor\` (`sysutil.DATA_DIR`) | `downloader`, `sysutil.log_error` |
+| Settings, window geometry, presets, GPU verdicts (`gpu_ok`) | Windows `~/.laxy_compressor.json`, Linux `~/.config/LaxyToolbox/config.json` (`models.CONFIG_PATH`) | `gui_config` (written to a temp file, then `os.replace`) |
+| yt-dlp (`yt-dlp.exe` / `yt-dlp_linux`), `last_download.log`, `errors.log` | Windows `%LOCALAPPDATA%\LaxyCompressor\`, Linux `~/.local/share/LaxyToolbox/` (`sysutil.DATA_DIR`) | `downloader`, `sysutil.log_error` |
 | 2 pass stats (`vc_<pid>_<job>_pass*`), flattened alpha PNGs (`vc_flat_*`), 5 second samples (`laxy_sample_*`) | `%TEMP%` | `planner` and `gui_run`; swept after each job and on close |
 | Download staging (`.laxy_download_*`) | inside the output folder | `downloader`; removed when the download ends |
-| Update leftovers (`.new`, `.old`) | next to the exe | `updater`; swept at startup |
+| Update leftovers (`.new`, `.old`) | next to the exe / AppImage | `updater`; swept at startup |
 
 ## Testing
 
@@ -193,10 +220,11 @@ file (`models.is_image` / `is_audio`).
 
 ## Releasing
 
-CI (`.github/workflows/ci.yml`) runs the `test` job on every push and pull
-request: ruff, the pinned ffmpeg and gifsicle download (checksum verified),
-and pytest on a Windows runner. The `build` job only runs when a GitHub
-release is published.
+CI (`.github/workflows/ci.yml`) runs two test jobs on every push and pull
+request: `test` on Windows and `test-linux` on Ubuntu 22.04, each with ruff,
+the pinned ffmpeg and gifsicle (checksum verified), and pytest. The `build`
+(exe) and `build-linux` (AppImage, plus a headless `--selftest`) jobs only
+run when a GitHub release is published, and only after both test jobs pass.
 
 1. Push the changes to `main` and wait for CI to pass.
 2. Bump `APP_VERSION` in `models.py`, rename CHANGELOG's `## Unreleased`
@@ -212,14 +240,16 @@ release is published.
    git show vX.Y.Z:.github/workflows/ci.yml | Select-String FFMPEG_URL
    ```
 5. On GitHub, draft a release from the tag and paste the CHANGELOG section as
-   the notes. Publishing starts the build job, which attaches the exe as
-   `Laxy.Toolbox.exe` (GitHub turns the space into a dot).
+   the notes. Publishing starts both build jobs, which attach the exe
+   as `Laxy.Toolbox.exe` (GitHub turns the space into a dot) and the
+   AppImage as `Laxy.Toolbox-x86_64.AppImage`.
 6. **Check the attached exe.** It should carry a sha256 digest, and its size
    should be close to the previous release's (v1.6.0 through v1.7.1 are all
    about 139.0 million bytes). An unexplained jump means different
    ingredients, such as the wrong ffmpeg build. Compare against earlier
    releases, not a local build, which carries extras from your own Python.
-   This check has caught real bugs three times.
+   This check has caught real bugs three times. The AppImage was first
+   attached in v1.8.0; compare later ones against that.
 
 Every installed copy checks the latest release at startup and turns the
 version label into an update button when the release is newer and has an exe
@@ -230,6 +260,13 @@ overwritten but CAN be renamed, which is the whole trick. The `.old` stays
 until the next startup sweeps it, so a failed install always rolls back to a
 working exe, and any failure falls back to opening the release page. Dev runs
 never self update.
+
+On Linux the same swap targets the AppImage **file** (`$APPIMAGE`, set by the
+AppImage runtime), not `sys.executable`, which points into the read-only
+mount. A renamed AppImage stays mounted, so the swap works the same way; the
+new file gets `chmod 755` first, and the relaunch starts the AppImage file.
+`pick_asset` matches each platform's own asset (`.exe` or
+`-x86_64.AppImage`), so a release without an AppImage offers Linux no update.
 
 ## Gotchas
 
@@ -252,6 +289,16 @@ Each of these cost a broken release or a long debugging session.
   tool can't turn an unchanged commit red. The third party release action is
   pinned to a commit SHA, because it has write access to the releases the in
   app updater downloads from. Bump all of these deliberately.
+- **Linux: restore the library path before starting anything.** A frozen
+  Linux build sets `LD_LIBRARY_PATH` to its bundled libraries, and children
+  inherit it: xdg-open, the browser, yt-dlp, and systemd-inhibit can then
+  load the bundle's libraries and crash. `app.py` calls
+  `sysutil.restore_system_env()` first thing, which puts back PyInstaller's
+  saved `LD_LIBRARY_PATH_ORIG`. The app's own libraries are already loaded.
+- **Linux: build on an old distro.** An AppImage needs at least the glibc it
+  was built against, so `build-linux` runs on Ubuntu 22.04, not
+  `ubuntu-latest`. appimagetool would also download an unpinned "continuous"
+  runtime; `build.sh` pins the runtime with `--runtime-file`.
 - A onefile exe that starts a copy of itself must scrub `_PYI*` and
   `_MEIPASS*` from the child's environment and set
   `PYINSTALLER_RESET_ENVIRONMENT=1` (`sysutil._relaunch_env`). Otherwise the

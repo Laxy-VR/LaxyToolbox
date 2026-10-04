@@ -18,7 +18,7 @@ def test_pick_asset_finds_exe_and_digest():
         {"name": "Source.zip", "browser_download_url": "u1", "size": 5},
         {"name": "Laxy.Toolbox.exe", "browser_download_url": "u2",
          "digest": "sha256:" + "ab" * 32, "size": 123},
-    ]))
+    ]), system="win32")
     tag, page, url, sha, size = got
     assert tag == "v9.9.9" and url == "u2"
     assert sha == "ab" * 32 and size == 123
@@ -26,14 +26,69 @@ def test_pick_asset_finds_exe_and_digest():
 
 def test_pick_asset_tolerates_missing_digest():
     got = pick_asset(release([{"name": "App.exe",
-                               "browser_download_url": "u", "size": 1}]))
+                               "browser_download_url": "u", "size": 1}]),
+                     system="win32")
     assert got[3] is None  # unverified download is allowed (as a browser is)
 
 
 def test_pick_asset_none_without_exe():
     assert pick_asset(release([{"name": "notes.txt",
-                                "browser_download_url": "u"}])) is None
-    assert pick_asset(release([])) is None
+                                "browser_download_url": "u"}]),
+                      system="win32") is None
+    assert pick_asset(release([]), system="win32") is None
+
+
+def _both_builds():
+    return release([
+        {"name": "Laxy.Toolbox.exe", "browser_download_url": "win",
+         "digest": "sha256:" + "aa" * 32, "size": 139},
+        {"name": "Laxy.Toolbox-x86_64.AppImage", "browser_download_url": "lin",
+         "digest": "sha256:" + "bb" * 32, "size": 120},
+    ])
+
+
+def test_pick_asset_takes_each_platforms_own_build():
+    """A release carries both builds; Windows must never install the
+    AppImage and Linux never the exe."""
+    assert pick_asset(_both_builds(), system="win32")[2] == "win"
+    linux = pick_asset(_both_builds(), system="linux")
+    assert linux[2] == "lin" and linux[3] == "bb" * 32
+
+
+def test_pick_asset_linux_ignores_an_exe_only_release():
+    """Releases before 1.8.0 had no AppImage: no update offered on Linux."""
+    assert pick_asset(release([{"name": "Laxy.Toolbox.exe",
+                                "browser_download_url": "u"}]),
+                      system="linux") is None
+
+
+def test_exe_path_is_the_appimage_file_on_linux(monkeypatch):
+    """Inside an AppImage sys.executable is in the read-only mount; the swap
+    must target the AppImage file the runtime names in $APPIMAGE."""
+    import sys
+    import pytest
+    if sys.platform == "win32":
+        pytest.skip("AppImage")
+    from updater import exe_path
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("APPIMAGE", "/home/x/Laxy.Toolbox-x86_64.AppImage")
+    assert exe_path() == "/home/x/Laxy.Toolbox-x86_64.AppImage"
+    monkeypatch.delenv("APPIMAGE")  # a plain PyInstaller folder: no self-update
+    assert exe_path() is None
+
+
+def test_apply_makes_the_new_build_executable(tmp_path):
+    import os
+    import sys
+    import pytest
+    if sys.platform == "win32":
+        pytest.skip("execute bit")
+    current = tmp_path / "app.AppImage"
+    current.write_bytes(b"OLD")
+    new = tmp_path / "app.AppImage.new"
+    new.write_bytes(b"NEW")  # a fresh download: not executable
+    assert apply(str(new), current=str(current)) is None
+    assert os.access(current, os.X_OK) and current.read_bytes() == b"NEW"
 
 
 # ---------- download ----------

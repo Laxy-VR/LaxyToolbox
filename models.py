@@ -2,6 +2,7 @@
 
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 
 import theme
@@ -12,7 +13,20 @@ APP_VERSION = "1.7.2"
 # The app checks this repo's latest GitHub release at startup and offers
 # updates. Empty string disables the check entirely.
 GITHUB_REPO = "Laxy-VR/LaxyToolbox"
-CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".laxy_compressor.json")
+
+
+def _config_path() -> str:
+    """Where settings live. Windows keeps its long-standing dotfile in the
+    user folder (so existing settings carry over); Linux follows the XDG spec
+    with ~/.config/LaxyToolbox/config.json."""
+    if sys.platform == "win32":
+        return os.path.join(os.path.expanduser("~"), ".laxy_compressor.json")
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+        os.path.expanduser("~"), ".config")
+    return os.path.join(base, "LaxyToolbox", "config.json")
+
+
+CONFIG_PATH = _config_path()
 
 TAB_COMPRESS = "Compress"
 TAB_GIF = "GIF"

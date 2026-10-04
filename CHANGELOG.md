@@ -3,6 +3,24 @@
 Every release, newest first. Download the app from the
 [releases page](https://github.com/Laxy-VR/LaxyToolbox/releases).
 
+## Unreleased
+- **New: a Linux version.** Every release now also has
+  `Laxy.Toolbox-x86_64.AppImage`: one file, like the exe, with ffmpeg
+  inside. It runs on 64 bit Linux from about 2022 on (Ubuntu 22.04, Debian
+  12, Fedora 36 and newer), on Wayland and X11, and updates itself from the
+  app the same way the exe does.
+- Everything works the same on Linux, including NVIDIA GPU encoding, the
+  brand fonts, and drag and drop. Linux specifics:
+  - **Open output folder** and double click use your file manager, and
+    **Show in folder** highlights the file (Dolphin, Nautilus, and others).
+  - The Download tab fetches yt-dlp's own Linux build.
+  - While a batch runs, the PC is kept from going to sleep through systemd.
+  - **Copy file** and pasting copied files need wl-clipboard (Wayland) or
+    xclip (X11); the app says so when they're missing.
+  - Settings live in `~/.config/LaxyToolbox/`, the downloader and logs in
+    `~/.local/share/LaxyToolbox/`.
+- Nothing changes on Windows.
+
 ## v1.7.2 · 2026-09-13
 - **Fixed: JPEG photos showed no thumbnail** in the queue and no preview on
   the Images tab, and **Crop this file** on a JPEG said it could not read a

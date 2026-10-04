@@ -8,6 +8,8 @@ touches the UI. Renaming a widget attribute here means updating its users in
 the other gui_*.py mixins; grep before renaming."""
 
 import os
+import sys
+import tkinter as tk
 
 import customtkinter as ctk
 
@@ -710,9 +712,21 @@ class BuildMixin:
         setattr(self, attr + "_label", lbl)
 
     def _set_app_icon(self):
-        icon = resource_path("laxy.ico")
+        """Windows takes the .ico; Tk elsewhere only reads images, so Linux
+        gets the PNG (kept on self, or Tk shows a blank icon once the image
+        is garbage collected)."""
+        if sys.platform == "win32":
+            icon = resource_path("laxy.ico")
+            if os.path.exists(icon):
+                try:
+                    self.iconbitmap(icon)
+                except Exception:  # noqa: BLE001 - bad icon file
+                    pass
+            return
+        icon = resource_path("laxy.png")
         if os.path.exists(icon):
             try:
-                self.iconbitmap(icon)
-            except Exception:  # noqa: BLE001 - non-Windows or bad icon
+                self._icon_image = tk.PhotoImage(file=icon)
+                self.iconphoto(True, self._icon_image)
+            except Exception:  # noqa: BLE001 - bad icon file
                 pass

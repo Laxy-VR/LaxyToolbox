@@ -1,12 +1,14 @@
 # Laxy's Toolbox
 
 Compress videos, make GIFs, convert images and audio, and download videos
-from links, all in batches. One portable Windows app: no installer, no
-Python, no ffmpeg to set up.
+from links, all in batches. One portable app for Windows and Linux: no
+installer, no Python, no ffmpeg to set up.
 
 ![Laxy's Toolbox with a mixed batch in the queue](docs/screenshot.png)
 
 ## Download
+
+### Windows
 
 1. Get **`Laxy.Toolbox.exe`** from the
    [latest release](https://github.com/Laxy-VR/LaxyToolbox/releases/latest).
@@ -23,6 +25,25 @@ works, the app offers it for much faster encodes.
 > exe is built in the open by GitHub Actions from the tagged source, and the
 > release page lists its SHA256 checksum, so you can confirm your copy is the
 > real one: run `Get-FileHash .\Laxy.Toolbox.exe` in PowerShell and compare.
+
+### Linux
+
+1. Get **`Laxy.Toolbox-x86_64.AppImage`** from the
+   [latest release](https://github.com/Laxy-VR/LaxyToolbox/releases/latest).
+2. Make it executable (in your file manager: Properties, then Permissions,
+   then *Is executable*; or `chmod +x Laxy.Toolbox-x86_64.AppImage`) and
+   double click it.
+
+Runs on 64 bit Linux from about 2022 on (Ubuntu 22.04, Debian 12, Fedora 36
+and newer), on both Wayland and X11. ffmpeg comes inside the AppImage, as on
+Windows. NVIDIA GPU encoding works with the proprietary driver installed.
+Optional extras: **wl-clipboard** (Wayland) or **xclip** (X11) lets
+*Copy file* put real files on the clipboard.
+
+To check your download, compare `sha256sum Laxy.Toolbox-x86_64.AppImage`
+with the checksum on the release page.
+
+### Updates
 
 **Updates:** the app checks for a new version when it starts. When one is
 out, the version label in the header turns into an update button. Click it
@@ -219,12 +240,13 @@ The app only goes online for two things:
 
 There are no accounts, no analytics, and no tracking.
 
-| What | Where |
-|---|---|
-| Settings, window size, saved presets | `%USERPROFILE%\.laxy_compressor.json` |
-| The downloader, the last download log, the error log | `%LOCALAPPDATA%\LaxyCompressor\` |
+| What | Windows | Linux |
+|---|---|---|
+| Settings, window size, saved presets | `%USERPROFILE%\.laxy_compressor.json` | `~/.config/LaxyToolbox/config.json` |
+| The downloader, the last download log, the error log | `%LOCALAPPDATA%\LaxyCompressor\` | `~/.local/share/LaxyToolbox/` |
 
-**Uninstall:** delete the exe, and optionally those two locations.
+**Uninstall:** delete the exe or AppImage, and optionally those two
+locations.
 
 ## FAQ
 
@@ -256,12 +278,12 @@ There are no accounts, no analytics, and no tracking.
 
 ## Building from source
 
-The app is Python 3.10 with CustomTkinter, packaged into one exe with
-PyInstaller. Setup, tests, the release process, and the architecture are in
+The app is Python 3.10 with CustomTkinter, packaged with PyInstaller into
+one exe on Windows (`build.ps1`) and one AppImage on Linux (`build.sh`). Setup, tests, the release process, and the architecture are in
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Version history is in
 [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The exe includes third party software under
-its own licenses, listed in [THIRD_PARTY.md](THIRD_PARTY.md).
+MIT, see [LICENSE](LICENSE). The exe and the AppImage include third party
+software under its own licenses, listed in [THIRD_PARTY.md](THIRD_PARTY.md).

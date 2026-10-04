@@ -6,24 +6,42 @@ sites change their internals and keep working without rebuilding the app.
 It cannot download DRM-protected content; such links simply fail.
 """
 
+import errno
 import hashlib
 import os
+import platform
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 import urllib.request
 from collections import deque
 
-from probe import NO_WINDOW, FFMPEG
-from sysutil import DATA_DIR, kill_tree, track_child, untrack_child
+from probe import FFMPEG
+from sysutil import (DATA_DIR, child_popen_kwargs, kill_tree, track_child,
+                     untrack_child)
 
-YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-YTDLP_SUMS_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS"
+
+def ytdlp_asset_name(system: str = sys.platform, machine: str = "") -> str:
+    """yt-dlp's standalone build for this OS, as named in its GitHub release.
+
+    All of them are self-contained (no Python needed): yt-dlp.exe on Windows,
+    yt-dlp_linux on x86-64 Linux, yt-dlp_linux_aarch64 on ARM Linux."""
+    if system == "win32":
+        return "yt-dlp.exe"
+    machine = (machine or platform.machine()).lower()
+    return "yt-dlp_linux_aarch64" if machine in ("aarch64", "arm64") else "yt-dlp_linux"
+
+
+YTDLP_ASSET = ytdlp_asset_name()
+_RELEASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
+YTDLP_URL = _RELEASE + YTDLP_ASSET
+YTDLP_SUMS_URL = _RELEASE + "SHA2-256SUMS"
 APPDATA_DIR = DATA_DIR
-YTDLP_PATH = os.path.join(APPDATA_DIR, "yt-dlp.exe")
+YTDLP_PATH = os.path.join(APPDATA_DIR, YTDLP_ASSET)
 DL_LOG_PATH = os.path.join(APPDATA_DIR, "last_download.log")
 
 # download() returns this when yt-dlp.exe itself will not start (a damaged
@@ -36,18 +54,18 @@ def has_ytdlp() -> bool:
 
 
 def _expected_sha256() -> str:
-    """yt-dlp.exe's published SHA256, from the release's SHA2-256SUMS."""
+    """This platform's yt-dlp SHA256, from the release's SHA2-256SUMS."""
     with urllib.request.urlopen(YTDLP_SUMS_URL, timeout=30) as r:
         text = r.read().decode("utf-8", "replace")
     for line in text.splitlines():
         parts = line.split()
-        if len(parts) == 2 and parts[1].lstrip("*") == "yt-dlp.exe":
+        if len(parts) == 2 and parts[1].lstrip("*") == YTDLP_ASSET:
             return parts[0].lower()
     raise RuntimeError("could not verify the downloader (no checksum published)")
 
 
 def fetch_ytdlp(on_progress=None) -> None:
-    """Download yt-dlp.exe from the official release (about 17 MB, one time).
+    """Download yt-dlp from the official release (about 17 MB, one time).
 
     Verified before it is kept: a connection that drops early just ends the
     stream, and a truncated exe would otherwise sit there failing every
@@ -75,6 +93,8 @@ def fetch_ytdlp(on_progress=None) -> None:
         if digest.hexdigest() != expected:
             raise RuntimeError("the downloader download did not match its "
                                "published checksum; try again")
+        if sys.platform != "win32":
+            os.chmod(tmp, 0o755)  # a fresh download isn't executable yet
         os.replace(tmp, YTDLP_PATH)
     finally:
         try:
@@ -88,7 +108,7 @@ def update_ytdlp() -> None:
     """Let yt-dlp replace itself with the latest release (fixes broken sites)."""
     try:
         subprocess.run([YTDLP_PATH, "-U"], capture_output=True, text=True,
-                       timeout=180, creationflags=NO_WINDOW)
+                       timeout=180, **child_popen_kwargs())
         os.utime(YTDLP_PATH)  # mark as freshly checked even if already latest
     except Exception:  # noqa: BLE001 - update is best-effort
         pass
@@ -276,9 +296,13 @@ def _download_into(staging, url, on_progress, cancel_event, max_height,
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True,
                                 encoding="utf-8", errors="replace", bufsize=1,
-                                creationflags=NO_WINDOW)
+                                **child_popen_kwargs())
     except OSError as e:
-        if getattr(e, "winerror", None) in (193, 216):  # not a valid exe
+        # A damaged copy: "not a valid exe" on Windows, "Exec format error"
+        # (or no execute bit) on Linux. Fetch a fresh one instead.
+        if (getattr(e, "winerror", None) in (193, 216)
+                or (sys.platform != "win32"
+                    and e.errno in (errno.ENOEXEC, errno.EACCES))):
             try:
                 os.remove(YTDLP_PATH)
             except OSError:

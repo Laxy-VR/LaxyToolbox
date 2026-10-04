@@ -3,6 +3,7 @@
 import pytest
 
 import os
+import sys
 import time
 
 from downloader import (parse_progress, parse_item, looks_like_url,
@@ -86,9 +87,10 @@ def test_build_dl_command_points_ytdlp_at_bundled_ffmpeg(monkeypatch):
     degrades to the lone 360p pre-merged format. The app must hand yt-dlp its
     bundled ffmpeg instead of relying on the user's PATH."""
     import downloader as dl
-    monkeypatch.setattr(dl, "FFMPEG", r"C:\bundle\ffmpeg.exe")
+    bundle = os.path.join(os.path.abspath(os.sep), "bundle")
+    monkeypatch.setattr(dl, "FFMPEG", os.path.join(bundle, "ffmpeg"))
     cmd = " ".join(dl.build_dl_command("https://u", "tmpl"))
-    assert r"--ffmpeg-location C:\bundle" in cmd
+    assert f"--ffmpeg-location {bundle}" in cmd
     # dev mode (bare name from PATH): no flag, let yt-dlp search normally
     monkeypatch.setattr(dl, "FFMPEG", "ffmpeg")
     cmd = " ".join(dl.build_dl_command("https://u", "tmpl"))
@@ -183,6 +185,7 @@ def _serve_release(monkeypatch, tmp_path, exe_body, sums_hash=None, exe_length=N
     import hashlib
     import downloader as dl
     monkeypatch.setattr(dl, "APPDATA_DIR", str(tmp_path))
+    monkeypatch.setattr(dl, "YTDLP_ASSET", "yt-dlp.exe")  # same test on every OS
     monkeypatch.setattr(dl, "YTDLP_PATH", str(tmp_path / "yt-dlp.exe"))
     digest = sums_hash or hashlib.sha256(exe_body).hexdigest()
     sums = f"{'0' * 64}  yt-dlp_linux\n{digest}  yt-dlp.exe\n".encode()
@@ -303,3 +306,33 @@ def test_newest_media_file_none_when_nothing_new(tmp_path):
     os.utime(old, (time.time() - 3600, time.time() - 3600))
     assert newest_media_file(str(tmp_path), since=time.time() - 60) is None
     assert newest_media_file(str(tmp_path / "missing"), since=0) is None
+
+
+def test_ytdlp_asset_per_platform():
+    """Each OS fetches yt-dlp's own standalone build (a Linux run fetching
+    yt-dlp.exe would download a file it can never start)."""
+    from downloader import ytdlp_asset_name
+    assert ytdlp_asset_name("win32") == "yt-dlp.exe"
+    assert ytdlp_asset_name("linux", "x86_64") == "yt-dlp_linux"
+    assert ytdlp_asset_name("linux", "aarch64") == "yt-dlp_linux_aarch64"
+
+
+def test_fetch_ytdlp_picks_this_platforms_checksum(monkeypatch, tmp_path):
+    """SHA2-256SUMS lists every build; the Linux binary must be checked
+    against its own line, not yt-dlp.exe's."""
+    import hashlib
+    import downloader as dl
+    body = b"\x7fELF linux build"
+    sums = (f"{'0' * 64}  yt-dlp.exe\n"
+            f"{hashlib.sha256(body).hexdigest()}  yt-dlp_linux\n").encode()
+    monkeypatch.setattr(dl, "YTDLP_ASSET", "yt-dlp_linux")
+    monkeypatch.setattr(dl, "APPDATA_DIR", str(tmp_path))
+    monkeypatch.setattr(dl, "YTDLP_PATH", str(tmp_path / "yt-dlp_linux"))
+    monkeypatch.setattr(dl.urllib.request, "urlopen",
+                        lambda url, timeout=None: _FakeResponse(
+                            sums if url == dl.YTDLP_SUMS_URL else body))
+    dl.fetch_ytdlp()
+    out = tmp_path / "yt-dlp_linux"
+    assert out.read_bytes() == body
+    if sys.platform != "win32":
+        assert os.access(out, os.X_OK)  # downloaded executable, ready to run

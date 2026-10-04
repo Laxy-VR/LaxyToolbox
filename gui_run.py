@@ -26,7 +26,7 @@ from models import (APP_NAME, APP_VERSION, GITHUB_REPO, MODE_QUALITY,
 from planner import plan_job, plan_image_attempts, trimmed_duration
 from probe import gpu_works, recommend_settings
 from sysutil import (set_keep_awake, flash_taskbar, log_error,
-                     is_newer_version, set_taskbar_progress)
+                     is_newer_version, open_path, set_taskbar_progress)
 
 
 class RunMixin:
@@ -577,9 +577,7 @@ class RunMixin:
         self.sample_btn.configure(state="normal", text="Test a 5s sample")
         if path:
             self.status.configure(text="Sample ready · opening in your player.")
-            try:
-                os.startfile(path)
-            except OSError:
+            if not open_path(path):
                 self.status.configure(text=f"Sample saved to {path}")
         elif error:
             self.status.configure(text=f"Sample failed: {error}")

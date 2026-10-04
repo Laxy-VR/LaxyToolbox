@@ -172,6 +172,7 @@ def test_unique_path_no_collision():
     assert unique_path(r"C:\out\b_h265.mp4", used) == r"C:\out\b_h265.mp4"
 
 
+@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows path rules")
 def test_unique_path_case_insensitive_on_windows():
     used = set()
     unique_path(r"C:\out\A_h265.mp4", used)

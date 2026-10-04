@@ -1,6 +1,7 @@
 """Tests for the bitrate math and ffmpeg command construction."""
 
 import math
+import os
 
 import pytest
 
@@ -381,12 +382,21 @@ def test_rotate_filter_before_scale():
     assert "hflip,vflip" in cmd
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive letters")
 def test_subtitles_filter_escaping():
     """Two-level backslash escaping per ffmpeg's filtergraph docs; validated
     against a real ffmpeg by the smoke test."""
     from encoder import _subtitles_filter
     f = _subtitles_filter(r"C:\subs\my clip's.srt")
     assert f == r"subtitles=filename=C\\:/subs/my clip\\\'s.srt"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX paths")
+def test_subtitles_filter_escaping_posix():
+    """Same escaping without a drive letter: only the quote needs it."""
+    from encoder import _subtitles_filter
+    f = _subtitles_filter("/subs/my clip's.srt")
+    assert f == r"subtitles=filename=/subs/my clip\\\'s.srt"
 
 
 def test_subtitles_render_last_in_chain():

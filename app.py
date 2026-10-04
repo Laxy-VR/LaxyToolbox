@@ -34,7 +34,11 @@ from gui_queue import QueueMixin
 from gui_run import RunMixin
 from gui_settings import SettingsMixin
 from models import APP_NAME, CONFIG_PATH, GITHUB_REPO, Job  # noqa: F401 - Job hints self.jobs
-from sysutil import log_error, resource_path, terminate_children
+from sysutil import log_error, resource_path, restore_system_env, terminate_children
+
+# Linux: the window's WM_CLASS, which the AppImage's .desktop entry names in
+# StartupWMClass so the taskbar groups the window under the app's icon.
+WM_CLASS = "laxy-toolbox"
 
 _AppBase = (ctk.CTk, TkinterDnD.DnDWrapper) if _DND_AVAILABLE else (ctk.CTk,)
 
@@ -42,7 +46,7 @@ _AppBase = (ctk.CTk, TkinterDnD.DnDWrapper) if _DND_AVAILABLE else (ctk.CTk,)
 class App(BuildMixin, QueueMixin, EditsMixin, DownloadsMixin, NotesMixin,
           SettingsMixin, RunMixin, ConfigMixin, *_AppBase):
     def __init__(self, fonts):
-        super().__init__()
+        super().__init__(**({} if sys.platform == "win32" else {"className": WM_CLASS}))
         self.fonts = fonts
         self.title(APP_NAME)
         self.configure(fg_color=theme.BG)
@@ -177,6 +181,7 @@ def _selftest(out_path):
 
 
 if __name__ == "__main__":
+    restore_system_env()  # before anything starts a child process
     if "--selftest" in sys.argv:
         i = sys.argv.index("--selftest")
         _selftest(sys.argv[i + 1] if i + 1 < len(sys.argv) else "selftest.json")

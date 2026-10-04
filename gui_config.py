@@ -173,6 +173,7 @@ class ConfigMixin:
         # saved preset on the next launch.
         tmp = CONFIG_PATH + ".tmp"
         try:
+            os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, indent=2)
             os.replace(tmp, CONFIG_PATH)

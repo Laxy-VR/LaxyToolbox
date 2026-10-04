@@ -5,8 +5,8 @@ import os
 import subprocess
 from collections import deque
 
-from probe import NO_WINDOW, FFMPEG, GIFSICLE, GPU_ENCODERS
-from sysutil import track_child, untrack_child
+from probe import FFMPEG, GIFSICLE, GPU_ENCODERS
+from sysutil import child_popen_kwargs, track_child, untrack_child
 
 GPU_VENDORS = tuple(GPU_ENCODERS)  # ("nvenc", "amf", "qsv")
 
@@ -686,7 +686,7 @@ def run_encode(cmd, duration, on_progress, cancel_event):
         encoding="utf-8",
         errors="replace",
         bufsize=1,
-        creationflags=NO_WINDOW,
+        **child_popen_kwargs(),
     )
     track_child(proc)
 

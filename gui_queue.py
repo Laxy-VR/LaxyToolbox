@@ -8,7 +8,6 @@ back through self.msg_queue and land in RunMixin's dispatcher."""
 
 import os
 import re
-import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -17,7 +16,8 @@ from tkinter import filedialog
 from models import (MEDIA_EXTS, Job, is_audio, is_image, human_size,
                     parse_time)
 from probe import probe_video
-from sysutil import copy_files_to_clipboard, clipboard_file_paths
+from sysutil import (clipboard_file_paths, copy_files_to_clipboard, open_path,
+                     reveal_in_folder)
 from widgets import QueueRow
 
 
@@ -353,22 +353,15 @@ class QueueMixin:
             self.status.configure(text="No output folder yet. Pick one or run a compression first.")
 
     def _reveal(self, path):
-        try:
-            if path and os.path.exists(path):
-                os.startfile(path)  # Windows: open file or folder
-                return
-        except (AttributeError, OSError):
-            pass
+        """Open a file in its default app, or a folder in the file manager."""
+        if path and os.path.exists(path) and open_path(path):
+            return
         self.status.configure(text=f"Path: {path}")
 
     def _reveal_select(self, path):
-        """Open Explorer with `path` highlighted, not just its folder."""
-        try:
-            if sys.platform == "win32" and os.path.isfile(path):
-                subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
-                return
-        except OSError:
-            pass
+        """Open the file manager with `path` highlighted, not just its folder."""
+        if os.path.isfile(path) and reveal_in_folder(path):
+            return
         self._reveal(os.path.dirname(path))
 
     def _open_job(self, job):
@@ -396,7 +389,12 @@ class QueueMixin:
             what = "File" if len(paths) == 1 else f"{len(paths)} files"
             self.status.configure(
                 text=f"{what} copied · paste with Ctrl+V into Discord, "
-                     "Explorer, or most chat apps.")
+                     f"{'Explorer' if sys.platform == 'win32' else 'your file manager'}"
+                     ", or most chat apps.")
+        elif sys.platform != "win32":
+            self.status.configure(
+                text="Could not copy the file: install wl-clipboard (Wayland) "
+                     "or xclip (X11) to copy files.")
         else:
             self.status.configure(text="Could not copy the file to the clipboard.")
 

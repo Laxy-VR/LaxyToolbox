@@ -1,10 +1,12 @@
-"""In-app updating: fetch the newest release exe from GitHub, verify it,
-swap it in place of the running exe, and let the app relaunch.
+"""In-app updating: fetch the newest release build from GitHub, verify it,
+swap it in place of the running one, and let the app relaunch.
 
-A running Windows exe cannot be overwritten but CAN be renamed, so the
-install is the classic swap: current -> .old, downloaded .new -> current,
-relaunch. The .old survives until the next startup sweeps it, so a botched
-install can always be rolled back to a working exe. Every step returns an
+Windows ships an .exe, Linux an AppImage. A running Windows exe cannot be
+overwritten but CAN be renamed (and on Linux the running AppImage stays
+mounted after a rename), so the install is the classic swap on both:
+current -> .old, downloaded .new -> current, relaunch. The .old survives
+until the next startup sweeps it, so a botched install can always be rolled
+back to a working build. Every step returns an
 error string instead of raising; the caller falls back to opening the
 release page in the browser, which is what the app did before this existed.
 """
@@ -20,15 +22,30 @@ _HEADERS = {"Accept": "application/vnd.github+json",
 
 
 def exe_path():
-    """The running packaged exe, or None in a dev run (no self-update)."""
-    return sys.executable if getattr(sys, "frozen", False) else None
+    """The file to replace on update: the running packaged exe on Windows,
+    the AppImage file on Linux. None in a dev run or any other build (a plain
+    PyInstaller folder can't be swapped as one file), so no self-update."""
+    if not getattr(sys, "frozen", False):
+        return None
+    if sys.platform == "win32":
+        return sys.executable
+    # Inside an AppImage sys.executable points into the read-only mount; the
+    # runtime tells us where the real file is.
+    return os.environ.get("APPIMAGE") or None
 
 
-def pick_asset(release: dict):
+def asset_suffix(system: str = sys.platform) -> str:
+    """How this platform's release asset is named: Laxy.Toolbox.exe on
+    Windows, Laxy.Toolbox-x86_64.AppImage on Linux."""
+    return ".exe" if system == "win32" else "-x86_64.appimage"
+
+
+def pick_asset(release: dict, system: str = sys.platform):
     """(tag, page_url, download_url, sha256 or None, size) from a GitHub
-    release API payload, or None when it has no exe asset."""
+    release API payload, or None when it has no asset for this platform."""
+    suffix = asset_suffix(system)
     asset = next((a for a in release.get("assets", [])
-                  if str(a.get("name", "")).lower().endswith(".exe")), None)
+                  if str(a.get("name", "")).lower().endswith(suffix)), None)
     if not asset or not asset.get("browser_download_url"):
         return None
     # GitHub publishes a sha256 digest per asset; older releases may lack it,
@@ -105,6 +122,11 @@ def apply(new_path: str, current=None):
     if not current:
         return "not running from a packaged exe"
     old = current + ".old"
+    if sys.platform != "win32":
+        try:
+            os.chmod(new_path, 0o755)  # an AppImage must be executable to run
+        except OSError:
+            pass  # a missing file fails the rename below, which rolls back
     try:
         if os.path.exists(old):
             os.remove(old)

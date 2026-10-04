@@ -13,22 +13,33 @@ import customtkinter as ctk
 
 
 def load_brand_fonts(fonts_dir: str) -> None:
-    """Register the bundled brand TTFs privately for this process (Windows).
+    """Register the bundled brand TTFs privately for this process.
 
     Must run before any Tk window queries font families. The fonts stay
-    invisible to other apps and vanish when the process exits.
+    invisible to other apps and vanish when the process exits: GDI's
+    FR_PRIVATE on Windows, fontconfig's per-application font set on Linux
+    (Tk draws through Xft/fontconfig there, so it sees them).
     """
-    if sys.platform != "win32" or not os.path.isdir(fonts_dir):
+    if not os.path.isdir(fonts_dir):
         return
+    files = [os.path.join(fonts_dir, name) for name in sorted(os.listdir(fonts_dir))
+             if name.lower().endswith((".ttf", ".otf"))]
     import ctypes
-    FR_PRIVATE = 0x10
-    for name in os.listdir(fonts_dir):
-        if name.lower().endswith((".ttf", ".otf")):
+    if sys.platform == "win32":
+        FR_PRIVATE = 0x10
+        for path in files:
             try:
-                ctypes.windll.gdi32.AddFontResourceExW(
-                    os.path.join(fonts_dir, name), FR_PRIVATE, 0)
+                ctypes.windll.gdi32.AddFontResourceExW(path, FR_PRIVATE, 0)
             except Exception:  # noqa: BLE001 - fall back to system fonts
                 pass
+        return
+    try:
+        fc = ctypes.CDLL("libfontconfig.so.1")
+        fc.FcConfigAppFontAddFile.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        for path in files:
+            fc.FcConfigAppFontAddFile(None, os.fsencode(path))  # None = current config
+    except Exception:  # noqa: BLE001 - no fontconfig: fall back to system fonts
+        pass
 
 # --- Palette (from the site's @theme tokens, plus a few derived shades) ---
 # The "neutrals" are deliberately not grey: they carry a whisper of the accent
@@ -99,9 +110,10 @@ NOTE = ACCENTS["Purple"]["note"]
 # Preferred brand fonts, with fallbacks for machines that don't have them.
 # "DM Sans 14pt" is how GDI names the bundled variable font's default instance.
 _FONT_PREFS = {
-    "sans": (["DM Sans", "DM Sans 14pt"], "Segoe UI"),
-    "mono": (["IBM Plex Mono"], "Consolas"),
-    "heading": (["JetBrains Mono", "IBM Plex Mono"], "Consolas"),
+    "sans": (["DM Sans", "DM Sans 14pt"], "Segoe UI" if sys.platform == "win32" else "DejaVu Sans"),
+    "mono": (["IBM Plex Mono"], "Consolas" if sys.platform == "win32" else "DejaVu Sans Mono"),
+    "heading": (["JetBrains Mono", "IBM Plex Mono"],
+                "Consolas" if sys.platform == "win32" else "DejaVu Sans Mono"),
 }
 
 

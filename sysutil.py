@@ -1,17 +1,68 @@
-"""Windows platform helpers: keep-awake, taskbar flash, bundled resource paths,
-and a registry of child processes so closing the app never orphans an ffmpeg."""
+"""Platform helpers: keep-awake, taskbar flash, opening files, bundled
+resource paths, and a registry of child processes so closing the app never
+orphans an ffmpeg.
+
+Windows is the original target; Linux gets the same features where the
+desktop offers them (xdg-open, the file manager's D-Bus API, systemd-inhibit)
+and quietly skips the purely cosmetic ones (taskbar flash and progress)."""
 
 import os
+import shutil
+import signal
 import subprocess
 import sys
 import threading
+import time
 
-_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+WINDOWS = sys.platform == "win32"
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if WINDOWS else 0
 
-# Per-user app data: the fetched yt-dlp, the last download log, errors.log.
-DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
-                        "LaxyCompressor")
+
+def _data_dir() -> str:
+    """Per-user app data: the fetched yt-dlp, the last download log, errors.log.
+
+    Windows keeps its long-standing folder (%LOCALAPPDATA%\\LaxyCompressor) so
+    existing installs keep their downloader. Elsewhere it follows the XDG
+    spec (~/.local/share/LaxyToolbox) instead of littering the home folder.
+    """
+    if WINDOWS:
+        return os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+                            "LaxyCompressor")
+    base = os.environ.get("XDG_DATA_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "LaxyToolbox")
+
+
+DATA_DIR = _data_dir()
 ERROR_LOG = os.path.join(DATA_DIR, "errors.log")
+
+
+def child_popen_kwargs() -> dict:
+    """Extra Popen arguments for a long-running child (ffmpeg, yt-dlp).
+
+    Windows: no console window flashing up. Elsewhere: its own process group,
+    so kill_tree() can stop the child and everything it started in one go.
+    """
+    return {"creationflags": _NO_WINDOW} if WINDOWS else {"start_new_session": True}
+
+
+def restore_system_env() -> None:
+    """Undo the frozen build's library path for everything the app starts.
+
+    A PyInstaller build on Linux points LD_LIBRARY_PATH at its own bundled
+    libraries. Child processes inherit it, and system programs (xdg-open, the
+    browser, yt-dlp, systemd-inhibit) can then load the bundle's libraries
+    instead of their own and crash. The app itself already has its libraries
+    loaded, so putting the original value back is safe. PyInstaller keeps
+    that original in LD_LIBRARY_PATH_ORIG.
+    """
+    if WINDOWS or not getattr(sys, "frozen", False):
+        return
+    orig = os.environ.pop("LD_LIBRARY_PATH_ORIG", None)
+    if orig:
+        os.environ["LD_LIBRARY_PATH"] = orig
+    else:
+        os.environ.pop("LD_LIBRARY_PATH", None)
 
 
 def log_error(context: str, exc_info=None) -> None:
@@ -53,28 +104,54 @@ def untrack_child(proc):
 def kill_tree(proc) -> None:
     """Stop a child process AND everything it started.
 
-    proc.terminate() only stops the process itself. yt-dlp.exe is a
-    PyInstaller onefile build: the process we start is a small launcher, the
-    real downloader is its child (and an ffmpeg merge a grandchild), so a
-    plain terminate leaves the actual download running headless.
+    proc.terminate() only stops the process itself. yt-dlp is a PyInstaller
+    onefile build on both Windows and Linux: the process we start is a small
+    launcher, the real downloader is its child (and an ffmpeg merge a
+    grandchild), so a plain terminate leaves the actual download running
+    headless. On Linux the child was started in its own process group (see
+    child_popen_kwargs), so the whole group gets the signal.
     """
     try:
         if proc.poll() is not None:
             return
     except OSError:
         return
-    if sys.platform == "win32":
+    if WINDOWS:
         try:
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
                            capture_output=True, timeout=10,
                            creationflags=_NO_WINDOW)
         except (OSError, subprocess.SubprocessError):
             pass
+    else:
+        _kill_group(proc)
     try:
         if proc.poll() is None:
             proc.kill()
     except OSError:
         pass
+
+
+def _kill_group(proc) -> None:
+    """SIGTERM the child's process group, then SIGKILL whatever is left.
+
+    Only when the child leads its own group: signalling a group the app
+    itself belongs to would take the app down with it."""
+    try:
+        if os.getpgid(proc.pid) != proc.pid:
+            return
+    except OSError:
+        return
+    for sig, grace in ((signal.SIGTERM, 2.0), (signal.SIGKILL, 0.0)):
+        try:
+            os.killpg(proc.pid, sig)
+        except OSError:
+            return  # the group is already gone
+        deadline = time.monotonic() + grace
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                break
+            time.sleep(0.05)
 
 
 def terminate_children(timeout: float = 3.0) -> None:
@@ -94,12 +171,60 @@ def terminate_children(timeout: float = 3.0) -> None:
             pass
 
 
+def _file_uris(paths) -> str:
+    """text/uri-list, the format Linux file managers and chat apps paste."""
+    from pathlib import Path
+    return "".join(Path(p).as_uri() + "\r\n" for p in paths)
+
+
+def _paths_from_uris(text: str) -> list:
+    """Local paths from a text/uri-list (file:// lines; comments skipped)."""
+    from urllib.parse import unquote, urlparse
+    paths = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        uri = urlparse(line)
+        if uri.scheme == "file" and uri.netloc in ("", "localhost"):
+            paths.append(unquote(uri.path))
+    return paths
+
+
+def _clipboard_tool(direction: str):
+    """The command that writes ("copy") or reads ("paste") a text/uri-list on
+    this desktop, or None. wl-clipboard on Wayland, xclip on X11."""
+    wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
+    if direction == "copy":
+        candidates = ([["wl-copy", "--type", "text/uri-list"]] if wayland else []) + [
+            ["xclip", "-selection", "clipboard", "-t", "text/uri-list"]]
+    else:
+        candidates = ([["wl-paste", "--no-newline", "--type", "text/uri-list"]]
+                      if wayland else []) + [
+            ["xclip", "-selection", "clipboard", "-o", "-t", "text/uri-list"]]
+    return next((c for c in candidates if shutil.which(c[0])), None)
+
+
 def copy_files_to_clipboard(paths) -> bool:
-    """Put real files on the Windows clipboard (CF_HDROP), so Ctrl+V pastes
-    the file itself into Discord, Explorer, and most chat apps."""
+    """Put real files on the clipboard, so Ctrl+V pastes the file itself into
+    Discord, the file manager, and most chat apps.
+
+    Windows: CF_HDROP. Linux: a text/uri-list through wl-copy or xclip, when
+    one of them is installed (Tk itself can only put plain text there)."""
     paths = [os.path.abspath(p) for p in paths if p and os.path.exists(p)]
-    if sys.platform != "win32" or not paths:
+    if not paths:
         return False
+    if not WINDOWS:
+        cmd = _clipboard_tool("copy")
+        if not cmd:
+            return False
+        try:
+            # wl-copy forks a server that keeps the selection alive and exits.
+            r = subprocess.run(cmd, input=_file_uris(paths).encode(),
+                               capture_output=True, timeout=5)
+            return r.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
     import ctypes
     import struct
     kernel32, user32 = ctypes.windll.kernel32, ctypes.windll.user32
@@ -137,13 +262,23 @@ def copy_files_to_clipboard(paths) -> bool:
 
 
 def clipboard_file_paths() -> list:
-    """File paths currently on the Windows clipboard (CF_HDROP), or [].
+    """File paths currently on the clipboard, or [].
 
     The mirror of copy_files_to_clipboard: lets Ctrl+V add files that were
-    copied in Explorer (or any app) straight into the queue.
+    copied in Explorer / the file manager (or any app) straight into the queue.
     """
-    if sys.platform != "win32":
-        return []
+    if not WINDOWS:
+        cmd = _clipboard_tool("paste")
+        if not cmd:
+            return []
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if r.returncode != 0:
+            return []
+        return [p for p in _paths_from_uris(r.stdout.decode("utf-8", "replace"))
+                if os.path.exists(p)]
     import ctypes
     user32, shell32 = ctypes.windll.user32, ctypes.windll.shell32
     user32.GetClipboardData.restype = ctypes.c_void_p
@@ -168,13 +303,36 @@ def clipboard_file_paths() -> list:
     return paths
 
 
+_inhibitor = None  # the running systemd-inhibit process on Linux
+
+
 def set_keep_awake(on: bool):
-    """Stop Windows from sleeping while a long encode runs (no-op elsewhere).
+    """Stop the PC from sleeping while a long encode runs.
 
     Only the system is kept awake; the display may still turn off, since an
-    encode doesn't need the screen.
+    encode doesn't need the screen. Windows: SetThreadExecutionState. Linux:
+    a systemd-inhibit sleep lock held by a tiny child for as long as needed
+    (skipped quietly where systemd-inhibit doesn't exist).
     """
-    if sys.platform != "win32":
+    global _inhibitor
+    if not WINDOWS:
+        if on and _inhibitor is None and shutil.which("systemd-inhibit"):
+            try:
+                _inhibitor = subprocess.Popen(
+                    ["systemd-inhibit", "--what=sleep", "--mode=block",
+                     "--who=Laxy's Toolbox", "--why=Encoding a batch",
+                     "sleep", "infinity"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True)
+                # Tracked like an encode, so closing the app mid-batch can't
+                # leave an orphan holding the sleep lock forever.
+                track_child(_inhibitor)
+            except OSError:
+                _inhibitor = None
+        elif not on and _inhibitor is not None:
+            kill_tree(_inhibitor)
+            untrack_child(_inhibitor)
+            _inhibitor = None
         return
     import ctypes
     ES_CONTINUOUS = 0x80000000
@@ -296,11 +454,58 @@ def _relaunch_env() -> dict:
 
 def relaunch():
     """Start a fresh copy of the app (how a theme change takes effect)."""
-    import subprocess
-    if getattr(sys, "frozen", False):  # packaged exe
+    appimage = os.environ.get("APPIMAGE")
+    if appimage and not WINDOWS:
+        # Inside an AppImage sys.executable lives in the read-only mount that
+        # disappears when this process exits; start the AppImage file itself.
+        subprocess.Popen([appimage], env=_relaunch_env(), start_new_session=True)
+    elif getattr(sys, "frozen", False):  # packaged exe
         subprocess.Popen([sys.executable], env=_relaunch_env())
     else:
         subprocess.Popen([sys.executable] + sys.argv, env=_relaunch_env())
+
+
+def open_path(path: str) -> bool:
+    """Open a file in its default app, or a folder in the file manager."""
+    try:
+        if WINDOWS:
+            os.startfile(path)
+        else:
+            subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        return True
+    except OSError:
+        return False
+
+
+def reveal_in_folder(path: str) -> bool:
+    """Open the file manager on `path`'s folder with the file highlighted.
+
+    Windows: explorer /select. Linux: the freedesktop FileManager1 D-Bus call
+    that Dolphin, Nautilus, Nemo and others implement; when nothing answers
+    it, just open the folder.
+    """
+    if WINDOWS:
+        try:
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+            return True
+        except OSError:
+            return open_path(os.path.dirname(path))
+    from pathlib import Path
+    if shutil.which("gdbus"):
+        try:
+            r = subprocess.run(
+                ["gdbus", "call", "--session",
+                 "--dest", "org.freedesktop.FileManager1",
+                 "--object-path", "/org/freedesktop/FileManager1",
+                 "--method", "org.freedesktop.FileManager1.ShowItems",
+                 f"['{Path(path).absolute().as_uri()}']", ""],
+                capture_output=True, timeout=5)
+            if r.returncode == 0:
+                return True
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return open_path(os.path.dirname(path))
 
 
 def resource_path(name: str) -> str:

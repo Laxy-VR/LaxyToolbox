@@ -53,9 +53,27 @@ jobs:
           Copy-Item (Get-ChildItem gifsicle_tmp -Recurse -Filter gifsicle.exe | Select-Object -First 1).FullName $bin
       - run: pytest -q
 
+  test-linux:
+    # The same suite on Linux, against the same pinned tools the AppImage
+    # bundles (build.sh is the single source of their URLs and hashes).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt pytest==9.1.1 ruff==0.15.22
+      - name: Lint
+        run: ruff check .
+      - name: Fetch pinned ffmpeg + build gifsicle (for the smoke tests)
+        run: |
+          ./build.sh --tools-only
+          echo "$PWD/build-linux/tools" >> "$GITHUB_PATH"
+      - run: pytest -q
+
   build:
     # Builds the self contained exe and attaches it to the GitHub release.
-    needs: test
+    needs: [test, test-linux]
     if: github.event_name == 'release'
     runs-on: windows-latest
     permissions:
@@ -96,3 +114,35 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: dist/Laxy Toolbox.exe
+
+  build-linux:
+    # Builds the AppImage and attaches it to the same release. Ubuntu 22.04
+    # on purpose: an AppImage needs at least the glibc it was built against,
+    # so building on an older distro is what lets it run on most of them.
+    needs: [test, test-linux]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt pyinstaller==6.21.0
+      - name: Build AppImage
+        run: ./build.sh
+      - name: Self test (bundled ffmpeg + drag-and-drop load)
+        # Fails the release if the AppImage can't find its own tools.
+        run: |
+          xvfb-run -a dist/Laxy.Toolbox-x86_64.AppImage --appimage-extract-and-run --selftest selftest.json
+          cat selftest.json
+          python -c "import json,sys; r=json.load(open('selftest.json')); \
+            ok = r['frozen'] and 'ffmpeg version' in r['ffmpeg_version'] \
+                 and 'ffprobe version' in r['ffprobe_version'] \
+                 and not str(r['tkdnd']).startswith('ERROR'); sys.exit(0 if ok else 1)"
+      - name: Attach AppImage to release
+        # Same pinned commit as the Windows job (v2.6.2).
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        with:
+          files: dist/Laxy.Toolbox-x86_64.AppImage
