@@ -226,7 +226,10 @@ the pinned ffmpeg and gifsicle (checksum verified), and pytest. The `build`
 (exe) and `build-linux` (AppImage, plus a headless `--selftest`) jobs only
 run when a GitHub release is published, and only after both test jobs pass.
 
-1. Push the changes to `main` and wait for CI to pass.
+1. Push the changes to `main` and wait for CI to pass. Then run a **dry run
+   of both release builds**: Actions, CI, *Run workflow* on `main` (or
+   `gh workflow run ci.yml --ref main`). It builds the exe and the AppImage
+   and runs the selftest, without a release or any attached files.
 2. Bump `APP_VERSION` in `models.py`, rename CHANGELOG's `## Unreleased`
    heading to `## vX.Y.Z · YYYY-MM-DD`, commit as `vX.Y.Z`, push, and wait
    for CI again.
