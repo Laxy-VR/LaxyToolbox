@@ -36,7 +36,9 @@ works, the app offers it for much faster encodes.
 
 Runs on 64 bit Linux from about 2022 on (Ubuntu 22.04, Debian 12, Fedora 36
 and newer), on both Wayland and X11. ffmpeg comes inside the AppImage, as on
-Windows. NVIDIA GPU encoding works with the proprietary driver installed.
+Windows. NVIDIA GPU encoding (H.265 and H.264) works with the proprietary
+driver installed; AV1 encodes on the CPU on Linux, because the bundled ffmpeg
+build has no AV1 NVENC encoder.
 Optional extras: **wl-clipboard** (Wayland) or **xclip** (X11) lets
 *Copy file* put real files on the clipboard.
 

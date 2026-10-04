@@ -9,8 +9,9 @@ Every release, newest first. Download the app from the
   inside. It runs on 64 bit Linux from about 2022 on (Ubuntu 22.04, Debian
   12, Fedora 36 and newer), on Wayland and X11, and updates itself from the
   app the same way the exe does.
-- Everything works the same on Linux, including NVIDIA GPU encoding, the
-  brand fonts, and drag and drop. Linux specifics:
+- Everything works the same on Linux, including NVIDIA GPU encoding (H.265
+  and H.264; AV1 runs on the CPU there), the brand fonts, and drag and drop.
+  Linux specifics:
   - **Open output folder** and double click use your file manager, and
     **Show in folder** highlights the file (Dolphin, Nautilus, and others).
   - The Download tab fetches yt-dlp's own Linux build.
