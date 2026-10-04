@@ -3,7 +3,7 @@
 Every release, newest first. Download the app from the
 [releases page](https://github.com/Laxy-VR/LaxyToolbox/releases).
 
-## Unreleased
+## v1.8.0 · 2026-10-04
 - **New: a Linux version.** Every release now also has
   `Laxy.Toolbox-x86_64.AppImage`: one file, like the exe, with ffmpeg
   inside. It runs on 64 bit Linux from about 2022 on (Ubuntu 22.04, Debian
